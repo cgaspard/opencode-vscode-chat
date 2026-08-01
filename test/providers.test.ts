@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   BUILTIN_ZEN,
+  assembleModels,
   catalogEntries,
   formatModelRef,
   isUsable,
@@ -10,7 +12,9 @@ import {
   searchCatalog,
   slugifyProviderId,
   unusableReason,
+  type LocalModelShape,
   type ProviderConnection,
+  type ProviderShape,
 } from '../src/core/providers';
 
 const catalogConn = (over: Partial<ProviderConnection> = {}): ProviderConnection => ({
@@ -184,4 +188,100 @@ test('with nothing loaded it falls back to the first model, and to undefined whe
   const cold = MODELS.map((m) => ({ ...m, loaded: false }));
   assert.deepEqual(pickModelRef([], cold), { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
   assert.equal(pickModelRef(['anything'], []), undefined);
+});
+
+// ---- assembleModels --------------------------------------------------------
+// The merge from a server response + local metadata into picker rows. The
+// fixture is a REAL `GET /config/providers` response captured from OpenCode
+// 1.18.4 (one catalog model, one local model), so the shape being parsed is the
+// shape the server actually sends rather than one inferred from docs.
+
+// Read from the repo root (where `npm test` runs) rather than the bundle's
+// location: the suite is bundled to out-test/, the fixture stays with the test.
+const REAL: ProviderShape[] = JSON.parse(
+  readFileSync('test/fixtures-providers.json', 'utf8'),
+);
+
+const CONNS: ProviderConnection[] = [
+  { id: 'c1', kind: 'catalog', providerID: 'anthropic', name: 'Anthropic', hasApiKey: true },
+  { id: 'l1', kind: 'local', providerID: 'lm-studio', name: 'My LM Studio', flavor: 'lmstudio' },
+];
+
+test('a catalog model maps its capabilities, price, limit and declared variants', () => {
+  const [model] = assembleModels([REAL[0]], CONNS);
+  assert.equal(model.id, 'anthropic/claude-sonnet-4-6');
+  assert.equal(model.modelID, 'claude-sonnet-4-6');
+  assert.equal(model.name, 'Claude Sonnet 4.6');
+  assert.equal(model.providerName, 'Anthropic'); // the user's own label for it
+  assert.equal(model.maxContextLength, 1_000_000);
+  assert.deepEqual(model.cost, { input: 3, output: 15 });
+  assert.equal(model.toolUse, true);
+  assert.equal(model.vision, true);
+  // The model's own variant names, marked declared so the picker offers them
+  // verbatim instead of the table we inject for local endpoints.
+  assert.deepEqual(model.reasoning, {
+    allowedOptions: ['low', 'medium', 'high', 'max'],
+    declared: true,
+  });
+  // A cloud model has no load lifecycle and no in-memory state to report.
+  assert.equal(model.lifecycle, false);
+  assert.equal(model.loaded, undefined);
+});
+
+test('a local model takes its live metadata from the endpoint, not the config', () => {
+  const local: LocalModelShape = {
+    id: 'qwen/qwen3-coder-30b',
+    displayName: 'qwen3-coder-30b',
+    state: 'loaded',
+    loadedContextLength: 32768,
+    maxContextLength: 262144,
+    publisher: 'qwen',
+    format: 'MLX',
+    quantization: '8bit',
+    reasoning: { allowedOptions: ['off', 'on'] },
+  };
+  const [model] = assembleModels(
+    [REAL[1]],
+    CONNS,
+    new Map([['lm-studio/qwen/qwen3-coder-30b', local]]),
+  );
+  assert.equal(model.loaded, true);
+  assert.equal(model.lifecycle, true, 'an LM Studio model can be loaded/ejected');
+  assert.equal(model.contextLength, 32768, 'the window it is loaded with');
+  assert.equal(model.maxContextLength, 262144, 'the endpoint knows the real max');
+  assert.equal(model.quantization, '8bit');
+  assert.equal(model.format, 'MLX');
+  // NOT declared: the local variant table is ours, so granularity comes from
+  // the endpoint's capability report.
+  assert.deepEqual(model.reasoning, { allowedOptions: ['off', 'on'] });
+  assert.equal(model.cost, undefined, 'a local model costs nothing per token');
+});
+
+test('a local model with no live metadata still lists, from the config alone', () => {
+  // The endpoint was unreachable when the list was built: the model is still
+  // offered (the config declared it), just without in-memory state.
+  const [model] = assembleModels([REAL[1]], CONNS);
+  assert.equal(model.id, 'lm-studio/qwen/qwen3-coder-30b');
+  assert.equal(model.loaded, undefined);
+  assert.equal(model.maxContextLength, 32768, 'falls back to the declared limit');
+});
+
+test('providers the registry does not know are dropped', () => {
+  // OpenCode also picks providers up from ambient env vars (a stray
+  // OPENAI_API_KEY). Those were never configured here, so offering their models
+  // would put rows in the picker with no matching row in the Providers panel.
+  assert.deepEqual(assembleModels(REAL, [CONNS[0]]).map((m) => m.providerID), ['anthropic']);
+});
+
+test('a disabled provider contributes nothing', () => {
+  const off = CONNS.map((c) => (c.providerID === 'anthropic' ? { ...c, disabled: true } : c));
+  assert.deepEqual(assembleModels(REAL, off).map((m) => m.providerID), ['lm-studio']);
+});
+
+test('rows are grouped by registry order, then by name', () => {
+  const reversed = [REAL[1], REAL[0]]; // server order is not our order
+  assert.deepEqual(assembleModels(reversed, CONNS).map((m) => m.providerID), [
+    'anthropic',
+    'lm-studio',
+  ]);
 });

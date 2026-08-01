@@ -1,0 +1,150 @@
+[
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "models": {
+      "claude-sonnet-4-6": {
+        "id": "claude-sonnet-4-6",
+        "providerID": "anthropic",
+        "api": {
+          "id": "claude-sonnet-4-6",
+          "url": "",
+          "npm": "@ai-sdk/anthropic"
+        },
+        "name": "Claude Sonnet 4.6",
+        "family": "claude-sonnet",
+        "capabilities": {
+          "temperature": true,
+          "reasoning": true,
+          "attachment": true,
+          "toolcall": true,
+          "input": {
+            "text": true,
+            "audio": false,
+            "image": true,
+            "video": false,
+            "pdf": true
+          },
+          "output": {
+            "text": true,
+            "audio": false,
+            "image": false,
+            "video": false,
+            "pdf": false
+          },
+          "interleaved": false
+        },
+        "cost": {
+          "input": 3,
+          "output": 15,
+          "cache": {
+            "read": 0.3,
+            "write": 3.75
+          }
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        },
+        "status": "active",
+        "options": {},
+        "headers": {},
+        "release_date": "2026-02-17",
+        "variants": {
+          "low": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "effort": "low"
+          },
+          "medium": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "effort": "medium"
+          },
+          "high": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "effort": "high"
+          },
+          "max": {
+            "thinking": {
+              "type": "adaptive"
+            },
+            "effort": "max"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "lm-studio",
+    "name": "LM Studio",
+    "models": {
+      "qwen/qwen3-coder-30b": {
+        "id": "qwen/qwen3-coder-30b",
+        "providerID": "lm-studio",
+        "api": {
+          "id": "qwen/qwen3-coder-30b",
+          "url": "",
+          "npm": "@ai-sdk/openai-compatible"
+        },
+        "name": "qwen3-coder-30b",
+        "family": "",
+        "capabilities": {
+          "temperature": false,
+          "reasoning": true,
+          "attachment": false,
+          "toolcall": true,
+          "input": {
+            "text": true,
+            "audio": false,
+            "image": false,
+            "video": false,
+            "pdf": false
+          },
+          "output": {
+            "text": true,
+            "audio": false,
+            "image": false,
+            "video": false,
+            "pdf": false
+          },
+          "interleaved": false
+        },
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "limit": {
+          "context": 32768,
+          "output": 8192
+        },
+        "status": "active",
+        "options": {},
+        "headers": {},
+        "release_date": "",
+        "variants": {
+          "off": {
+            "reasoningEffort": "none"
+          },
+          "low": {
+            "reasoningEffort": "low"
+          },
+          "medium": {
+            "reasoningEffort": "medium"
+          },
+          "high": {
+            "reasoningEffort": "high"
+          }
+        }
+      }
+    }
+  }
+]

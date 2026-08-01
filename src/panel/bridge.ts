@@ -26,6 +26,7 @@ import { humanizeError, isConnectionError } from '../core/errors';
 import { aggregateUpstream, type ProbeStatus } from '../core/health';
 import {
   LOCAL_PROBE_TARGETS,
+  assembleModels,
   formatModelRef,
   isUsable,
   parseModelRef,
@@ -1657,13 +1658,7 @@ export class ChatBridge {
     }
     // Local metadata, keyed by "<providerID>/<modelID>" so the merge is a lookup.
     const localByRef = new Map<string, LocalModel>();
-    const localConnByProvider = new Map<string, ProviderConnection>();
-    for (const conn of this.deps.registry.enabled()) {
-      if (conn.kind === 'local') {
-        localConnByProvider.set(conn.providerID, conn);
-      }
-    }
-    if (localConnByProvider.size) {
+    if (this.deps.registry.enabled().some((c) => c.kind === 'local')) {
       const byConn = await this.deps.endpoints.listAllModels();
       for (const [connId, models] of byConn) {
         const conn = this.deps.registry.byId(connId);
@@ -1675,62 +1670,9 @@ export class ChatBridge {
         }
       }
     }
-
-    const known = new Map(this.deps.registry.list().map((c) => [c.providerID, c]));
-    const out: UiModel[] = [];
-    for (const provider of providers.providers) {
-      const conn = known.get(provider.id);
-      // A provider the server knows but the registry does not is one the user
-      // removed a moment ago (or one OpenCode picked up from the environment) —
-      // either way it is not ours to offer.
-      if (!conn || conn.disabled) {
-        continue;
-      }
-      for (const [modelID, info] of Object.entries(provider.models ?? {})) {
-        const ref = formatModelRef(provider.id, modelID);
-        const local = localByRef.get(ref);
-        const caps = info.capabilities;
-        const variants = Object.keys(info.variants ?? {});
-        out.push({
-          id: ref,
-          providerID: provider.id,
-          providerName: conn.name || provider.name,
-          providerKind: conn.kind,
-          modelID,
-          name: local?.displayName ?? info.name ?? modelID,
-          loaded: local ? local.state === 'loaded' : undefined,
-          lifecycle: conn.kind === 'local' && conn.flavor === 'lmstudio',
-          contextLength: local?.loadedContextLength,
-          maxContextLength: local?.maxContextLength ?? info.limit?.context,
-          toolUse: local?.toolUse ?? caps?.toolcall,
-          vision: local?.vision ?? caps?.input?.image ?? caps?.attachment,
-          publisher: local?.publisher,
-          quantization: local?.quantization,
-          format: local?.format,
-          cost: info.cost?.input !== undefined || info.cost?.output !== undefined
-            ? { input: info.cost?.input, output: info.cost?.output }
-            : undefined,
-          // Local models use the variant table WE declared, so their granularity
-          // comes from LM Studio's capability report. Catalog models publish
-          // their own variants, which are the exact names they accept.
-          reasoning: local
-            ? local.reasoning
-            : caps?.reasoning
-              ? { allowedOptions: variants, declared: true }
-              : null,
-        });
-      }
-    }
-    // Group by provider (registry order), models alphabetical within each, so
-    // the picker is stable across refreshes rather than following server order.
-    const order = new Map([...known.keys()].map((id, i) => [id, i]));
-    out.sort(
-      (a, b) =>
-        (order.get(a.providerID) ?? 99) - (order.get(b.providerID) ?? 99) ||
-        a.name.localeCompare(b.name),
-    );
-    this.lastModels = out;
-    return out;
+    // The merge itself is pure (and unit-tested against a real server response).
+    this.lastModels = assembleModels(providers.providers, this.deps.registry.list(), localByRef);
+    return this.lastModels;
   }
 
   /**

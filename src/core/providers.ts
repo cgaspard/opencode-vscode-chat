@@ -269,6 +269,143 @@ export function parseModelRef(ref: string | null | undefined): { providerID?: st
   return { providerID: value.slice(0, slash), modelID: value.slice(slash + 1) };
 }
 
+// ---- Assembling the model list --------------------------------------------
+
+/**
+ * The subset of `GET /config/providers` this module reads. Declared
+ * structurally rather than imported so this stays free of the protocol module
+ * (and of anything with a node dependency), keeping it unit-testable.
+ */
+export interface ProviderModelShape {
+  name?: string;
+  capabilities?: { reasoning?: boolean; toolcall?: boolean; attachment?: boolean; input?: { image?: boolean } };
+  cost?: { input?: number; output?: number };
+  limit?: { context?: number };
+  variants?: Record<string, unknown>;
+}
+
+export interface ProviderShape {
+  id: string;
+  name: string;
+  models: Record<string, ProviderModelShape>;
+}
+
+/** The extra metadata only a local endpoint can report about its own models. */
+export interface LocalModelShape {
+  id: string;
+  displayName: string;
+  state?: string;
+  maxContextLength?: number;
+  loadedContextLength?: number;
+  toolUse?: boolean;
+  vision?: boolean;
+  publisher?: string;
+  quantization?: string;
+  format?: string;
+  reasoning?: { allowedOptions: string[]; default?: string; declared?: boolean } | null;
+}
+
+/** One row of the model picker. Mirrors UiModel in src/shared.ts. */
+export interface AssembledModel {
+  id: string;
+  providerID: string;
+  providerName: string;
+  providerKind: ConnectionKind;
+  modelID: string;
+  name: string;
+  loaded?: boolean;
+  lifecycle?: boolean;
+  contextLength?: number;
+  maxContextLength?: number;
+  toolUse?: boolean;
+  vision?: boolean;
+  publisher?: string;
+  quantization?: string;
+  format?: string;
+  cost?: { input?: number; output?: number };
+  reasoning?: { allowedOptions: string[]; default?: string; declared?: boolean } | null;
+}
+
+/**
+ * Build the model list from the server's provider response, enriched with what
+ * the local endpoints know about their own models.
+ *
+ * The server response is the authority on *which* models exist and what the
+ * server will accept — for catalog providers it also carries names, limits,
+ * capabilities, prices and each model's own reasoning variants. Local models
+ * get a second pass from their client, which knows the things no catalog can:
+ * whether a model is in memory right now, the window it was loaded with, its
+ * quantization and runtime format.
+ *
+ * Providers the server knows but the registry does not are dropped: those are
+ * either just-removed connections or ones OpenCode picked up from ambient
+ * environment variables, and neither is something the user configured here —
+ * every row in the picker should map to a row in the Providers panel.
+ *
+ * Ordering is by the registry, then model name, so the picker is stable across
+ * refreshes rather than following server order.
+ */
+export function assembleModels(
+  providers: ProviderShape[],
+  connections: ProviderConnection[],
+  localByRef: Map<string, LocalModelShape> = new Map(),
+): AssembledModel[] {
+  const known = new Map(connections.map((c) => [c.providerID, c]));
+  const out: AssembledModel[] = [];
+  for (const provider of providers) {
+    const conn = known.get(provider.id);
+    if (!conn || conn.disabled) {
+      continue;
+    }
+    for (const [modelID, info] of Object.entries(provider.models ?? {})) {
+      const ref = formatModelRef(provider.id, modelID);
+      const local = localByRef.get(ref);
+      const caps = info.capabilities;
+      const variants = Object.keys(info.variants ?? {});
+      out.push({
+        id: ref,
+        providerID: provider.id,
+        providerName: conn.name || provider.name,
+        providerKind: conn.kind,
+        modelID,
+        name: local?.displayName ?? info.name ?? modelID,
+        loaded: local ? local.state === 'loaded' : undefined,
+        lifecycle: conn.kind === 'local' && conn.flavor === 'lmstudio',
+        contextLength: local?.loadedContextLength,
+        maxContextLength: local?.maxContextLength ?? info.limit?.context,
+        toolUse: local?.toolUse ?? caps?.toolcall,
+        vision: local?.vision ?? caps?.input?.image ?? caps?.attachment,
+        publisher: local?.publisher,
+        quantization: local?.quantization,
+        format: local?.format,
+        // Price is a property of buying tokens, so local endpoints never carry
+        // one — the server reports 0/0 for the models we declare, and rendering
+        // that as "free" would be noise on a model running on your own GPU.
+        // A *cloud* provider priced at zero (a free tier) keeps its label.
+        cost:
+          conn.kind !== 'local' &&
+          (info.cost?.input !== undefined || info.cost?.output !== undefined)
+            ? { input: info.cost?.input, output: info.cost?.output }
+            : undefined,
+        // Local models use the variant table WE declared, so their granularity
+        // comes from the endpoint's own capability report. Catalog models
+        // publish their own variants, which are the exact names they accept.
+        reasoning: local
+          ? local.reasoning
+          : caps?.reasoning
+            ? { allowedOptions: variants, declared: true }
+            : null,
+      });
+    }
+  }
+  const order = new Map([...known.keys()].map((id, i) => [id, i]));
+  return out.sort(
+    (a, b) =>
+      (order.get(a.providerID) ?? 99) - (order.get(b.providerID) ?? 99) ||
+      a.name.localeCompare(b.name),
+  );
+}
+
 export interface SelectableRef {
   providerID: string;
   modelID: string;
