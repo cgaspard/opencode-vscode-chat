@@ -17,7 +17,7 @@ let server: OpencodeServerManager | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
-  log('activating OpenCode Chat');
+  log('activating OpenCode Agent');
 
   const cfg = getConfig();
   const registry = new ProviderRegistry(context);
@@ -83,10 +83,10 @@ export function activate(context: vscode.ExtensionContext): void {
             // against the registry first.
             await syncEndpointsFromRegistry(registry, endpoints);
             await server!.restart();
-            vscode.window.showInformationMessage('OpenCode Chat: OpenCode server restarted.');
+            vscode.window.showInformationMessage('OpenCode Agent: OpenCode server restarted.');
           } catch (err) {
             vscode.window.showErrorMessage(
-              `OpenCode Chat: ${err instanceof Error ? err.message : String(err)}`,
+              `OpenCode Agent: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         },

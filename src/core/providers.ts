@@ -2,7 +2,7 @@
  * The provider domain model — pure, so it unit-tests without vscode and can be
  * shared with the webview.
  *
- * OpenCode Chat talks to models through one embedded OpenCode server, and every
+ * OpenCode Agent talks to models through one embedded OpenCode server, and every
  * model it can reach comes from a *provider* declared in that server's injected
  * config. There are three kinds:
  *

@@ -274,7 +274,7 @@ function build(): void {
     <div id="messages" class="messages">
       <div id="welcome" class="welcome">
         <div class="welcome-logo">${icon.markLarge}</div>
-        <div class="welcome-title">OpenCode Chat</div>
+        <div class="welcome-title">OpenCode Agent</div>
         <div class="welcome-sub">Local agentic coding, powered by OpenCode.</div>
         <div class="welcome-hint">Pick a model below and describe a task.</div>
       </div>

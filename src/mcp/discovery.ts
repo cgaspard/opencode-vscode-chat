@@ -41,7 +41,7 @@ function readJson(file: string): unknown {
     // rather than silently dropping their servers.
     logError(`mcp: ${file} is not valid JSON — ignoring`, err);
     vscode.window.showWarningMessage(
-      `OpenCode Chat: ${vscode.workspace.asRelativePath(file)} is not valid JSON; its MCP servers were ignored.`,
+      `OpenCode Agent: ${vscode.workspace.asRelativePath(file)} is not valid JSON; its MCP servers were ignored.`,
     );
     return undefined;
   }

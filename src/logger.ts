@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 let channel: vscode.OutputChannel | undefined;
 
 export function initLogger(context: vscode.ExtensionContext): vscode.OutputChannel {
-  channel = vscode.window.createOutputChannel('OpenCode Chat');
+  channel = vscode.window.createOutputChannel('OpenCode Agent');
   context.subscriptions.push(channel);
   return channel;
 }

@@ -54,11 +54,13 @@ const sections = versions.map((v) =>
     .replace(/^(#{1,5}) /gm, '$1# '),
 );
 
+const displayName = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).displayName;
+
 const body =
   [
     '# Changelog',
     '',
-    'All notable changes to OpenCode Chat. Generated from `releasenotes/*.yaml`',
+    `All notable changes to ${displayName}. Generated from \`releasenotes/*.yaml\``,
     'by `scripts/render-changelog.js` — edit those, not this file.',
     '',
     ...sections.flatMap((s) => [s, '']),

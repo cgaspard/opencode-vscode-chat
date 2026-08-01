@@ -1,6 +1,6 @@
 {
   "name": "opencode-vscode-chat",
-  "displayName": "OpenCode Chat",
+  "displayName": "OpenCode Agent",
   "description": "Bring your own models: an agentic coding panel powered by the open-source OpenCode agent. Add API keys for Anthropic, OpenAI, Google, OpenRouter and 170+ more, and/or point it at a local LM Studio, Ollama or vLLM server.",
   "version": "0.2.0",
   "publisher": "cgaspard",
@@ -79,34 +79,34 @@
     "commands": [
       {
         "command": "opencodeChat.newChat",
-        "title": "OpenCode Chat: New Chat",
+        "title": "OpenCode Agent: New Chat",
         "icon": "$(add)"
       },
       {
         "command": "opencodeChat.openInTab",
-        "title": "OpenCode Chat: Open Chat in Editor Tab",
+        "title": "OpenCode Agent: Open Chat in Editor Tab",
         "icon": "$(window)"
       },
       {
         "command": "opencodeChat.history",
-        "title": "OpenCode Chat: Session History",
+        "title": "OpenCode Agent: Session History",
         "icon": "$(history)"
       },
       {
         "command": "opencodeChat.restartServer",
-        "title": "OpenCode Chat: Restart OpenCode Server"
+        "title": "OpenCode Agent: Restart OpenCode Server"
       },
       {
         "command": "opencodeChat.showLogs",
-        "title": "OpenCode Chat: Show Logs"
+        "title": "OpenCode Agent: Show Logs"
       },
       {
         "command": "opencodeChat.focus",
-        "title": "OpenCode Chat: Focus Chat"
+        "title": "OpenCode Agent: Focus Chat"
       }
     ],
     "configuration": {
-      "title": "OpenCode Chat",
+      "title": "OpenCode Agent",
       "properties": {
         "opencodeChat.autoDetectLocalServers": {
           "type": "boolean",
@@ -179,7 +179,7 @@
         "opencodeChat.mcpServers": {
           "type": "object",
           "default": {},
-          "markdownDescription": "MCP (Model Context Protocol) servers to make available to the agent, as a map of `name → server`. Each server is either a local (stdio) command or a remote (http/sse) URL.\n\nServers configured for **Claude Code** (`.mcp.json` at the workspace root) and **VS Code Copilot** (`.vscode/mcp.json` and the user `mcp` setting) are also discovered automatically — use this setting to add servers specific to OpenCode Chat, or to override a discovered one. Entries here take precedence on a name collision.\n\nLocal (stdio) example:\n```json\n{\n  \"playwright\": { \"command\": \"npx\", \"args\": [\"-y\", \"@playwright/mcp@latest\"] }\n}\n```\nRemote (http/sse) example:\n```json\n{\n  \"docs\": { \"type\": \"http\", \"url\": \"https://example.com/mcp\", \"headers\": { \"Authorization\": \"Bearer ${MY_TOKEN}\" } }\n}\n```\n`${VAR}` references are resolved from the environment before launch. Set `\"enabled\": false` to keep a server defined but off. Note: each MCP server adds its tool schemas to the model's context, which is limited on local models — enable only what you need.",
+          "markdownDescription": "MCP (Model Context Protocol) servers to make available to the agent, as a map of `name → server`. Each server is either a local (stdio) command or a remote (http/sse) URL.\n\nServers configured for **Claude Code** (`.mcp.json` at the workspace root) and **VS Code Copilot** (`.vscode/mcp.json` and the user `mcp` setting) are also discovered automatically — use this setting to add servers specific to OpenCode Agent, or to override a discovered one. Entries here take precedence on a name collision.\n\nLocal (stdio) example:\n```json\n{\n  \"playwright\": { \"command\": \"npx\", \"args\": [\"-y\", \"@playwright/mcp@latest\"] }\n}\n```\nRemote (http/sse) example:\n```json\n{\n  \"docs\": { \"type\": \"http\", \"url\": \"https://example.com/mcp\", \"headers\": { \"Authorization\": \"Bearer ${MY_TOKEN}\" } }\n}\n```\n`${VAR}` references are resolved from the environment before launch. Set `\"enabled\": false` to keep a server defined but off. Note: each MCP server adds its tool schemas to the model's context, which is limited on local models — enable only what you need.",
           "additionalProperties": {
             "type": "object",
             "properties": {

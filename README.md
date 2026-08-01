@@ -1,4 +1,4 @@
-# OpenCode Chat
+# OpenCode Agent
 
 **A real coding agent in VS Code — on whichever models you bring.**
 
@@ -147,7 +147,7 @@ Servers are merged from these sources, in increasing precedence (a later source 
 | 3 | VS Code's user-level `mcp` setting | **VS Code** user format | `servers` |
 | 4 | `opencodeChat.mcpServers` (VS Code settings) | bare map of name → server | _(the map itself)_ |
 
-If you already use MCP with Claude Code or VS Code Copilot, those servers work here with **nothing to re-enter**. Use `opencodeChat.mcpServers` to add a server just for OpenCode Chat, or to override a discovered one.
+If you already use MCP with Claude Code or VS Code Copilot, those servers work here with **nothing to re-enter**. Use `opencodeChat.mcpServers` to add a server just for OpenCode Agent, or to override a discovered one.
 
 ### Setting up a `.mcp.json` (shareable, per project)
 
@@ -212,9 +212,9 @@ Each row shows the transport (local/remote) and the command or URL it was config
 
 ### Notes
 
-- **Applying changes.** Edits to `opencodeChat.mcpServers` (or VS Code's `mcp` setting) restart the agent automatically. Edits to the `.mcp.json` / `.vscode/mcp.json` files apply on the next **OpenCode Chat: Restart OpenCode Server** (or a window reload).
+- **Applying changes.** Edits to `opencodeChat.mcpServers` (or VS Code's `mcp` setting) restart the agent automatically. Edits to the `.mcp.json` / `.vscode/mcp.json` files apply on the next **OpenCode Agent: Restart OpenCode Server** (or a window reload).
 - **Mind the context window.** Each MCP server adds its tool schemas to every request. Local models have far less context than cloud ones (OpenCode's own system prompt + built-in tools already use ~11k tokens), so enable only the servers you need and raise `opencodeChat.minContextLength` if tools start crowding out the conversation.
-- **`npx`/`uvx` on `PATH`.** Local servers launched with `npx`/`uvx` need Node and those tools on `PATH`. The extension augments `PATH` with common install locations (Homebrew, `~/.local/bin`, nvm/fnm, bun, cargo), but if a server shows as **failed**, check **OpenCode Chat: Show Logs**.
+- **`npx`/`uvx` on `PATH`.** Local servers launched with `npx`/`uvx` need Node and those tools on `PATH`. The extension augments `PATH` with common install locations (Homebrew, `~/.local/bin`, nvm/fnm, bun, cargo), but if a server shows as **failed**, check **OpenCode Agent: Show Logs**.
 
 ## How it works
 

@@ -878,7 +878,7 @@ export class ChatBridge {
         ? 'Consider trimming it or raising opencodeChat.minContextLength.'
         : 'Consider trimming it.';
       vscode.window.showWarningMessage(
-        `OpenCode Chat: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. ${remedy}`,
+        `OpenCode Agent: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. ${remedy}`,
       );
     }
   }
@@ -1164,7 +1164,7 @@ export class ChatBridge {
 
   /** The user-facing identity override (shared by sends + goal continues). */
   private identitySystem(): string {
-    return 'You are "OpenCode Chat", an agentic coding assistant running in the user\'s editor against the model provider they chose. If asked your name or what you are, identify as "OpenCode Chat". Never identify yourself as "opencode".';
+    return 'You are "OpenCode Agent", an agentic coding assistant running in the user\'s editor against the model provider they chose. If asked your name or what you are, identify as "OpenCode Agent". Never identify yourself as "opencode".';
   }
 
   /** The goal directive appended to the agent's system prompt while active. */

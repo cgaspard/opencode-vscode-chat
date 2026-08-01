@@ -32,7 +32,7 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>OpenCode Chat</title>
+  <title>OpenCode Agent</title>
 </head>
 <body>
   <div id="app"></div>

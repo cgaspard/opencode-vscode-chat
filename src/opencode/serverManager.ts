@@ -349,7 +349,7 @@ export class OpencodeServerManager {
     }
 
     // Override the build/plan agent prompts so the model identifies as
-    // "OpenCode Chat" instead of OpenCode's built-in "You are opencode…".
+    // "OpenCode Agent" instead of OpenCode's built-in "You are opencode…".
     const config = {
       $schema: 'https://opencode.ai/config.json',
       // Let the model ask the user clarifying questions via the built-in
