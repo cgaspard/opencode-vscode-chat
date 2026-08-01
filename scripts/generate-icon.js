@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Generate a 256x256 PNG icon for OpenCode Chat. Pure Node, no deps.
 //
-// Design: a family member of the vscode-debug-mcp icon — deep slate rounded
-// square with a soft radial glow, cyan circuit traces, and a central emblem of
-// three provider nodes converging on one violet agent core. Reads as "bring
-// your own models, one agent" — and deliberately borrows no vendor's mark,
-// since this extension belongs to none of them.
+// Design: the same dark rounded square + single violet glyph as the rest of
+// this publisher's extensions, carrying OpenCode's own block "o" — the mark
+// from sst/opencode packages/web/public/favicon-v3.svg, on its 64/512 grid.
+// Their two-tone treatment (light frame, mid-tone counter) is preserved as
+// violet-on-darker-violet, so it reads as OpenCode at 256px and as a solid
+// glyph at 32.
 
 const fs = require('fs');
 const path = require('path');
@@ -16,11 +17,8 @@ const RADIUS = 44;
 
 const BG = [0x1a, 0x1f, 0x2a, 0xff]; // deep slate
 const BG_GLOW = [0x2c, 0x26, 0x46, 0xff]; // violet-tinted center glow
-const CORE = [0x8b, 0x5c, 0xf6, 0xff]; // agent core violet
-const CORE_DARK = [0x53, 0x37, 0xa8, 0xff]; // core shadow / underside
-const CORE_HILITE = [0xc9, 0xb8, 0xff, 0xff]; // top sheen
-const WIRE = [0x7b, 0xc3, 0xe8, 0xff]; // cool cyan circuitry
-const NODE = [0xa8, 0xe0, 0xff, 0xff]; // brighter node
+const GLYPH = [0x8b, 0x5c, 0xf6, 0xff]; // the "o" frame
+const GLYPH_INNER = [0x53, 0x37, 0xa8, 0xff]; // its counter, a shade back
 
 const out = new Uint8Array(SIZE * SIZE * 4);
 
@@ -127,37 +125,33 @@ function lerp(a, b, t) {
 fillRoundedRect(0, 0, SIZE, SIZE, RADIUS, BG);
 radialGlow(SIZE / 2, SIZE / 2 + 18, 170, BG_GLOW);
 
-const cx = SIZE / 2;
-
-// --- Emblem: three provider nodes converging on one agent core ---
-const EY = 134; // sits a touch below centre so the glow reads behind it
-const CORE_R = 34;
-const NODES = [
-  [56, 74],
-  [56, 194],
-  [206, EY],
-];
-
-// Traces first, so the nodes and core sit on top of them.
-for (const [nx, ny] of NODES) {
-  const dx = cx - nx;
-  const dy = EY - ny;
-  const len = Math.hypot(dx, dy);
-  // Stop the trace at the core's edge rather than under it — a line that
-  // disappears beneath the core still shows through its anti-aliased rim.
-  const ex = cx - (dx / len) * (CORE_R - 2);
-  const ey = EY - (dy / len) * (CORE_R - 2);
-  drawLine(nx, ny, ex, ey, 9, WIRE);
+// --- Glyph: OpenCode's block "o" ---
+// Their favicon is a 512 canvas; every coordinate below is that geometry at
+// half scale, centred. Drawn as four bars rather than a rect with a hole
+// punched in it, so the background glow shows through the counter instead of
+// being painted over with flat slate.
+function fillRect(x0, y0, w, h, rgba) {
+  for (let y = y0; y < y0 + h; y++) {
+    for (let x = x0; x < x0 + w; x++) {
+      setPx(x, y, rgba);
+    }
+  }
 }
-for (const [nx, ny] of NODES) {
-  fillRoundedNode(nx, ny, 17, 7, BG, NODE);
-}
+const S = 0.5;
+const map = (x, y) => [64 + (x - 128) * S, 48 + (y - 96) * S];
+const [gx0, gy0] = map(128, 96); //  64,  48 — outer top-left
+const [gx1, gy1] = map(384, 416); // 192, 208 — outer bottom-right
+const [hx0, hy0] = map(192, 160); //  96,  80 — counter top-left
+const [hx1, hy1] = map(320, 352); // 160, 176 — counter bottom-right
+const [, sy0] = map(0, 224); //       112     — the counter's shaded portion
 
-// The core: shaded sphere with a drop shadow and a top sheen, matching the
-// lighting of the connector nodes.
-fillCircle(cx, EY + 5, CORE_R, CORE_DARK);
-fillCircle(cx, EY, CORE_R, CORE);
-fillCircle(cx - CORE_R * 0.22, EY - CORE_R * 0.34, CORE_R * 0.42, CORE_HILITE);
+fillRect(gx0, gy0, gx1 - gx0, hy0 - gy0, GLYPH); // top bar
+fillRect(gx0, hy1, gx1 - gx0, gy1 - hy1, GLYPH); // bottom bar
+fillRect(gx0, hy0, hx0 - gx0, hy1 - hy0, GLYPH); // left bar
+fillRect(hx1, hy0, gx1 - hx1, hy1 - hy0, GLYPH); // right bar
+// The counter is only shaded from 224 down in their mark — the gap above it is
+// what gives the glyph its depth.
+fillRect(hx0, sy0, hx1 - hx0, hy1 - sy0, GLYPH_INNER);
 
 // --- Encode PNG ---
 function crc32(buf) {

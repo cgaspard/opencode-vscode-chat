@@ -1,15 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Three sources converging on one agent: the extension's whole idea, and
-       legible down to 16px where finer detail turns to mush. -->
-  <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-    <path d="M6.2 5.6 L11 11" />
-    <path d="M6.2 18.4 L11 13" />
-    <path d="M18.6 12 L14 12" />
-  </g>
-  <g fill="currentColor">
-    <circle cx="5" cy="5" r="2.1" />
-    <circle cx="5" cy="19" r="2.1" />
-    <circle cx="20" cy="12" r="2.1" />
-    <circle cx="12" cy="12" r="3.6" />
-  </g>
+  <!-- OpenCode's block "o", from their own favicon. Axis-aligned and on a
+       whole-pixel grid so it stays crisp where the activity bar renders it at
+       16px. Monochrome currentColor: VS Code tints activity icons itself. -->
+  <path fill="currentColor" fill-rule="evenodd" d="M6 4h12v16H6V4zm3 3v10h6V7H9z"/>
 </svg>
