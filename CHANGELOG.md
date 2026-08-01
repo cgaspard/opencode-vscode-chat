@@ -1,0 +1,40 @@
+# Changelog
+
+All notable changes to OpenCode Chat. Generated from `releasenotes/*.yaml`
+by `scripts/render-changelog.js` — edit those, not this file.
+
+## v0.2.0
+
+_Released 2026-08-01_
+
+### Highlights
+- First release. A full coding agent in VS Code, running on whichever models you bring — cloud API keys, local servers, or both at once.
+- Works before you configure anything: OpenCode's free Zen models are built in, so a fresh install answers your first question with no key and no account.
+- Add a provider in two clicks — search the models.dev catalog, paste a key. 170+ providers work with no per-provider setup, because model lists, context limits, capabilities and prices all come from the provider itself.
+- Local servers are first class — LM Studio, Ollama, vLLM or any OpenAI-compatible endpoint, with a one-click scan of the usual ports.
+
+### Added
+- Providers panel — configured providers with live status, searchable catalog, masked key entry, per-provider enable/disable, and edit/remove.
+- Model picker grouped by provider, showing context window, vision/tool badges, and price per million tokens where a model is priced.
+- LM Studio extras where they apply — loaded/unloaded state, publisher, format and quantization, load/eject from the menu, and automatic context-window management.
+- Reasoning effort derived from what each model actually declares — Anthropic low/medium/high/max, OpenAI medium/high/xhigh, Auto/Off/On for most local models, hidden entirely for models that cannot reason.
+- Agent panel carried over from the LM Studio edition it forks — tool cards with permission prompts, build/plan modes, live todo lists, user-defined agents and delegation, autonomous goals with an LLM judge, session history and restore, MCP servers discovered from Claude Code and VS Code configs, skills, and slash commands.
+- Model picker groups collapse by provider, all but the one holding your current model — a flat list over a 300-model provider is unusable, and you can still see which model you are on.
+- Known local runtimes are one click from the provider search — LM Studio, Ollama and vLLM prefill their default address, plus a Custom server row for anything else.
+
+### Changed
+- Bundled OpenCode 1.18.11, which brings three MCP fixes (stuck SSE reconnect loops, reconnecting after expired SDK sessions, legacy client compatibility), reasoning-field parsing for providers using custom field names, and correct per-SDK prompt-cache keys.
+- Adding a provider is one search over both kinds. What you click decides the form — a keyed provider asks for a key, a local server asks for an address — instead of two tabs you had to choose between first.
+- Models are identified as provider/model, so the same model id under two providers is never ambiguous.
+- Every enabled provider is live at once — switching from a local model to Claude is a model choice, not a server switch, and keeps your session.
+- The offline banner now means nothing at all can serve a model. A single local server going down while another provider works is reported on that provider's row, and on the banner only when it is the one serving your selected model.
+- Cloud providers are never polled for liveness — probing a metered API would bill you to learn what the next real request reports for free.
+
+### Fixed
+- The context-window control no longer appears for models whose window is not ours to set. Choosing one on a cloud model silently rewrote the local setting and metered the usage bar against a window five times too small.
+- A local server added by typing its address now has its runtime detected, so an LM Studio box elsewhere on your network keeps load/eject, context management and its identity badges instead of degrading to a plain OpenAI-compatible endpoint.
+- Local servers no longer appear under "add an API key". Four models.dev entries are really local runtimes, so searching for LM Studio offered a key prompt for something that has none.
+- The providers panel no longer clips its own contents. Both add-forms rendered on top of each other, which pushed the local form off the bottom and squeezed the provider list — and its enable/disable switches — out of view.
+
+### Removed
+- The single hardcoded LM Studio server, and its opencodeChat.lmStudioBaseUrl setting, replaced by the provider registry.

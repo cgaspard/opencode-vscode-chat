@@ -45,12 +45,16 @@ for (const [key, label] of sections) {
   }
 }
 
-out.push('---');
-out.push('Install the `.vsix` attached to this release via:');
-out.push('');
-out.push('```bash');
-out.push(`code --install-extension opencode-chat-${data.version}.vsix`);
-out.push('```');
+// The install footer belongs on a GitHub Release, where the .vsix is actually
+// attached — not in CHANGELOG.md, which renders the same notes as one history.
+if (!process.argv.includes('--no-footer')) {
+  out.push('---');
+  out.push('Install the `.vsix` attached to this release via:');
+  out.push('');
+  out.push('```bash');
+  out.push(`code --install-extension opencode-chat-${data.version}.vsix`);
+  out.push('```');
+}
 
 process.stdout.write(out.join('\n') + '\n');
 

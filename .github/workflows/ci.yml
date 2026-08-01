@@ -22,6 +22,9 @@ jobs:
       - run: npm ci
       - run: npm run check-types
       - run: npm test
+      # CHANGELOG.md is generated from releasenotes/*.yaml and ships in the
+      # .vsix, so a stale one is a stale Marketplace tab.
+      - run: node scripts/render-changelog.js --check
       # Bundle one representative target so the dev VSIX is a real, runnable
       # package (matches what Release produces). linux-x64 keeps CI fast.
       - run: node scripts/fetch-opencode.js linux-x64

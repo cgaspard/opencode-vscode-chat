@@ -29,6 +29,13 @@ supports `key: value`, list-of-strings blocks, and `key: []`.
 
 1. Bump `version` in `package.json`.
 2. Add `releasenotes/<version>.yaml`.
-3. Commit, then tag: `git tag v<version> && git push origin v<version>`.
-4. The Release workflow packages the `.vsix`, creates the GitHub Release, and
+3. Run `npm run changelog` — `CHANGELOG.md` is generated from these files and
+   ships in the `.vsix` as the Marketplace's Changelog tab. CI fails if it is
+   out of date.
+4. Commit, then tag: `git tag v<version> && git push origin v<version>`.
+5. The Release workflow packages the `.vsix`, creates the GitHub Release, and
    publishes to the VS Code Marketplace (needs the `VSCE_PAT` repo secret).
+
+Minor version parity picks the channel: **even** (0.2.0) publishes to the
+Marketplace's stable channel, **odd** (0.3.0) to pre-release. A `-suffix` tag
+stays a GitHub-only draft.

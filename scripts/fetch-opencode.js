@@ -100,6 +100,15 @@ function main() {
       `${version}\n${target}\n${spec.exe}\n`,
     );
 
+    // MIT requires its notice to travel with the binary we redistribute, and
+    // the platform packages ship only package.json + the executable — so the
+    // notice is vendored here and copied in beside it. Keep LICENSE.opencode
+    // in step if upstream ever changes terms.
+    fs.copyFileSync(
+      path.join(ROOT, 'scripts', 'LICENSE.opencode'),
+      path.join(BIN_DIR, 'LICENSE.opencode'),
+    );
+
     const bytes = fs.statSync(destBin).size;
     console.log(
       `[fetch-opencode] wrote ${destBin} (${(bytes / 1e6).toFixed(1)} MB), v${version}`,

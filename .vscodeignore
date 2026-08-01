@@ -22,6 +22,8 @@ scripts/**
 # (design notes, parity reports, briefs) lands in the .vsix on the Marketplace.
 *.md
 !README.md
+# The Marketplace renders this as its own "Changelog" tab — it has to ship.
+!CHANGELOG.md
 media/screenshots/**
 releasenotes/**
 sample-workspace/**
