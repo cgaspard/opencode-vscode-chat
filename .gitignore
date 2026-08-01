@@ -15,3 +15,10 @@ out-integration/
 # Skill/MCP run artifacts created when testing the sample workspace
 sample-workspace/.opencode/node_modules/
 sample-workspace/.opencode/**/node_modules/
+
+# Credential drops. These have landed in the repo root more than once while
+# moving keys into 1Password; `git add -A` would happily commit them.
+*key.txt
+*token.txt
+pat.txt
+*.pem

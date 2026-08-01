@@ -420,6 +420,7 @@ function build(): void {
           <input id="server-edit-url" class="server-input" />
           <label class="server-edit-label" for="server-edit-key">API key</label>
           <input id="server-edit-key" class="server-input" type="password" autocomplete="off" />
+          <span id="server-edit-hint" class="effort-note"></span>
           <label id="server-edit-remove-row" class="server-edit-check hidden">
             <input id="server-edit-remove-key" type="checkbox" /> Remove the stored key
           </label>
@@ -2000,13 +2001,18 @@ function renderServerMenu(): void {
   for (const p of state.providers) {
     const row = document.createElement('div');
     row.className = 'model-row provider-row' + (p.enabled ? '' : ' dimmed');
+    const keyBadge = '<span class="server-key-badge" title="API key stored">key</span>';
     const detail =
       p.kind === 'local'
         ? escapeHtml(p.url ?? '')
         : p.kind === 'builtin'
-          ? 'Free — no key required'
+          ? // Zen runs on a free public key with nothing configured; a stored
+            // key is the paid tier, so say which one is actually in use.
+            p.hasApiKey
+            ? `${keyBadge} paid tier`
+            : 'Free tier — no key required'
           : p.hasApiKey
-            ? '<span class="server-key-badge" title="API key stored">key</span>'
+            ? keyBadge
             : 'No API key yet';
     const models = p.modelCount ? ` · ${p.modelCount} model${p.modelCount > 1 ? 's' : ''}` : '';
     row.innerHTML = `
@@ -2017,16 +2023,16 @@ function renderServerMenu(): void {
       </span>
       <button class="model-action provider-toggle ${p.enabled ? 'on' : 'off'}" role="switch" aria-checked="${p.enabled}" title="${p.enabled ? `Disable ${p.name} — its models leave the picker` : `Enable ${p.name}`}"><span class="toggle-track"><span class="toggle-knob"></span></span></button>
       ${
-        // The builtin has nothing to edit or remove, but its actions still
-        // occupy the slots — otherwise its switch drifts right and no two rows
-        // line up down the column. Same markup, just hidden, so the reserved
-        // width is the button's real width and stays right if its padding or
-        // icon ever changes. (A hand-measured spacer was 4px too narrow.)
-        p.kind === 'builtin'
-          ? `<button class="model-action ghost" disabled aria-hidden="true" tabindex="-1">${icon.pencil}</button>
-             <button class="model-action ghost" disabled aria-hidden="true" tabindex="-1">✕</button>`
-          : `<button class="model-action server-edit" title="Edit provider">${icon.pencil}</button>
-             <button class="model-action eject" title="Remove provider">✕</button>`
+        // The builtin can take a key (paid Zen) but cannot be removed — it has
+        // no stored settings to delete. Its remove slot is still rendered,
+        // hidden: without it the switch drifts right and no two rows line up
+        // down the column. Same markup as a real button, so the reserved width
+        // is the button's real width and stays right if its padding or icon
+        // ever changes. (A hand-measured spacer was 4px too narrow.)
+        `<button class="model-action server-edit" title="${p.kind === 'builtin' ? (p.hasApiKey ? 'Update the Zen API key' : 'Add a paid Zen API key') : 'Edit provider'}">${icon.pencil}</button>` +
+        (p.kind === 'builtin'
+          ? `<button class="model-action ghost" disabled aria-hidden="true" tabindex="-1">✕</button>`
+          : `<button class="model-action eject" title="Remove provider">✕</button>`)
       }`;
     (row.querySelector('.provider-toggle') as HTMLButtonElement).addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2226,7 +2232,11 @@ let editingServer: UiProvider | null = null;
 
 function openServerEdit(s: UiProvider): void {
   editingServer = s;
-  (document.getElementById('server-edit-name') as HTMLInputElement).value = s.name;
+  const nameEl = document.getElementById('server-edit-name') as HTMLInputElement;
+  nameEl.value = s.name;
+  // The builtin's name is synthesized on every list(), so a rename here would
+  // silently revert — don't offer a control that does nothing.
+  nameEl.disabled = s.kind === 'builtin';
   const urlEl = document.getElementById('server-edit-url') as HTMLInputElement;
   urlEl.value = s.url ?? '';
   // A cloud provider has no URL to edit — it is reached through OpenCode.
@@ -2241,7 +2251,16 @@ function openServerEdit(s: UiProvider): void {
     ? 'Unchanged — type to replace'
     : s.kind === 'local'
       ? 'API key (optional, for auth proxies)'
-      : 'API key';
+      : s.kind === 'builtin'
+        ? 'Paid Zen key (optional — the free tier needs none)'
+        : 'API key';
+  const hint = document.getElementById('server-edit-hint');
+  if (hint) {
+    hint.textContent =
+      s.kind === 'builtin'
+        ? 'Zen works with no key on its free tier. Add a key only to use your paid Zen account; removing it drops back to free.'
+        : '';
+  }
   const removeRow = document.getElementById('server-edit-remove-row')!;
   removeRow.classList.toggle('hidden', !s.hasApiKey);
   (document.getElementById('server-edit-remove-key') as HTMLInputElement).checked = false;

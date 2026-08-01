@@ -287,9 +287,12 @@ export class OpencodeServerManager {
    *
    * Three shapes, one per connection kind:
    *
-   *   builtin  Nothing is emitted. OpenCode serves its own hosted provider
-   *            unconditionally (verified: it answers prompts with no key), so
-   *            declaring it could only break it.
+   *   builtin  Nothing is emitted *unless* a key is stored. OpenCode serves its
+   *            own hosted provider unconditionally on a free public key
+   *            (verified: it answers prompts with no key), so declaring it
+   *            keyless could only break it. A paid Zen key is the one reason to
+   *            declare it — same `options.apiKey` shape as a catalog provider,
+   *            which is what upgrades the session off the free tier.
    *   catalog  Just `options.apiKey`. Everything else — the model list, prices,
    *            context limits, reasoning variants — comes from OpenCode's own
    *            catalog, which is why 176 providers work with no per-provider
@@ -312,6 +315,12 @@ export class OpencodeServerManager {
 
     for (const { conn, apiKey } of connections) {
       if (conn.kind === 'builtin') {
+        // Keyless is the normal case and must stay undeclared — the server
+        // already serves Zen on its public key. With a key, declare it so the
+        // paid tier is used instead.
+        if (apiKey) {
+          provider[conn.providerID] = { options: this.apiKeyOption(conn.id, apiKey) };
+        }
         continue;
       }
       if (conn.kind === 'catalog') {

@@ -37,13 +37,18 @@ export class ProviderRegistry {
 
   /**
    * Every connection, builtin first. The builtin is synthesized rather than
-   * stored so it cannot be corrupted or lost, but its `disabled` flag is
-   * persisted like any other.
+   * stored so it cannot be corrupted or lost, but the flags a user can set on
+   * it — `disabled`, and `hasApiKey` for a paid Zen key — are persisted like
+   * any other connection's.
    */
   list(): ProviderConnection[] {
     const stored = this.context.globalState.get<ProviderConnection[]>(CONNECTIONS_KEY) ?? [];
     const builtinOverride = stored.find((c) => c.id === BUILTIN_ZEN.id);
-    const builtin: ProviderConnection = { ...BUILTIN_ZEN, disabled: builtinOverride?.disabled };
+    const builtin: ProviderConnection = {
+      ...BUILTIN_ZEN,
+      disabled: builtinOverride?.disabled,
+      hasApiKey: builtinOverride?.hasApiKey,
+    };
     return [builtin, ...stored.filter((c) => c.id !== BUILTIN_ZEN.id)];
   }
 
@@ -145,7 +150,12 @@ export class ProviderRegistry {
     } else if (action.kind === 'remove') {
       await this.context.secrets.delete(secretKey(id));
     }
-    const next = stored.map((c) => {
+    // The builtin has no stored record until something is set on it. Materialize
+    // one so the key flag survives — otherwise the secret is written but
+    // `list()` keeps reporting the provider as keyless.
+    const base =
+      isBuiltin && !stored.some((c) => c.id === id) ? [...stored, { ...BUILTIN_ZEN }] : stored;
+    const next = base.map((c) => {
       if (c.id !== id) {
         return c;
       }
@@ -169,8 +179,14 @@ export class ProviderRegistry {
     const stored = this.stored();
     if (id === BUILTIN_ZEN.id) {
       // The builtin isn't stored, so materialize a record just to carry the flag.
+      const existing = stored.find((c) => c.id === BUILTIN_ZEN.id);
       const rest = stored.filter((c) => c.id !== BUILTIN_ZEN.id);
-      await this.persist(disabled ? [...rest, { ...BUILTIN_ZEN, disabled: true }] : rest);
+      // Carry the key flag across a disable/enable cycle. The secret itself is
+      // never touched here, so dropping the flag would strand a stored key:
+      // the config would keep using it while the panel showed no key at all.
+      const keyed = !!existing?.hasApiKey;
+      const record = { ...BUILTIN_ZEN, ...(keyed ? { hasApiKey: true } : {}), disabled };
+      await this.persist(disabled || keyed ? [...rest, record] : rest);
       return;
     }
     await this.persist(stored.map((c) => (c.id === id ? { ...c, disabled } : c)));
