@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+out-test/
+*.vsix
+.DS_Store
+# Bundled OpenCode binary is fetched at package time, never committed.
+bin/
+out-integration/
+.vscode-test/
+
+# Playwright MCP run artifacts (created when testing the sample)
+.playwright-mcp/
+
+# Skill/MCP run artifacts created when testing the sample workspace
+sample-workspace/.opencode/node_modules/
+sample-workspace/.opencode/**/node_modules/

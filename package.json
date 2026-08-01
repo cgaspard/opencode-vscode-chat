@@ -1,0 +1,266 @@
+{
+  "name": "lmstudio-code",
+  "displayName": "LM Studio Code",
+  "description": "Agentic coding panel for your local LM Studio models. A Claude Code / Codex\u2013style chat experience powered by the open-source OpenCode agent, running entirely against your local models.",
+  "version": "0.16.0",
+  "publisher": "cgaspard",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "opencodeVersion": "1.18.4",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "lm studio",
+    "lmstudio",
+    "opencode",
+    "agent",
+    "local llm",
+    "claude code",
+    "codex",
+    "byom"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cgaspard/lmstudio-vscode-chat"
+  },
+  "bugs": {
+    "url": "https://github.com/cgaspard/lmstudio-vscode-chat/issues"
+  },
+  "homepage": "https://github.com/cgaspard/lmstudio-vscode-chat#readme",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lmstudioCode",
+          "title": "LM Studio",
+          "icon": "media/activity-icon.svg",
+          "when": "lmstudioCode:doesNotSupportSecondarySidebar"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "lmstudioCodeSecondary",
+          "title": "LM Studio",
+          "icon": "media/activity-icon.svg",
+          "when": "!lmstudioCode:doesNotSupportSecondarySidebar"
+        }
+      ]
+    },
+    "views": {
+      "lmstudioCode": [
+        {
+          "id": "lmstudioCode.chat",
+          "name": "LM Studio",
+          "type": "webview",
+          "when": "lmstudioCode:doesNotSupportSecondarySidebar"
+        }
+      ],
+      "lmstudioCodeSecondary": [
+        {
+          "id": "lmstudioCode.chatSecondary",
+          "name": "LM Studio",
+          "type": "webview",
+          "when": "!lmstudioCode:doesNotSupportSecondarySidebar"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "lmstudioCode.newChat",
+        "title": "LM Studio Code: New Chat",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lmstudioCode.openInTab",
+        "title": "LM Studio Code: Open Chat in Editor Tab",
+        "icon": "$(window)"
+      },
+      {
+        "command": "lmstudioCode.history",
+        "title": "LM Studio Code: Session History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "lmstudioCode.restartServer",
+        "title": "LM Studio Code: Restart OpenCode Server"
+      },
+      {
+        "command": "lmstudioCode.showLogs",
+        "title": "LM Studio Code: Show Logs"
+      },
+      {
+        "command": "lmstudioCode.focus",
+        "title": "LM Studio Code: Focus Chat"
+      }
+    ],
+    "configuration": {
+      "title": "LM Studio Code",
+      "properties": {
+        "lmstudioCode.lmStudioBaseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:1234/v1",
+          "description": "Base URL of the LM Studio OpenAI-compatible server (must end in /v1)."
+        },
+        "lmstudioCode.opencodePath": {
+          "type": "string",
+          "default": "",
+          "description": "Override path to an opencode binary. Leave empty to use your own install (PATH, ~/.opencode/bin/opencode) if present, otherwise the binary bundled with this extension."
+        },
+        "lmstudioCode.serverPort": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the embedded OpenCode server. 0 = pick a free port automatically."
+        },
+        "lmstudioCode.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model id to select by default (must match an LM Studio model id). Empty = first available."
+        },
+        "lmstudioCode.agent": {
+          "type": "string",
+          "default": "build",
+          "description": "Agent to select by default. 'build' edits your code; 'plan' is read-only. Any agent you define in .opencode/agent/*.md (or ~/.config/opencode/agent/) can also be named here \u2014 it appears in the picker after the OpenCode server restarts."
+        },
+        "lmstudioCode.autoEnsureContext": {
+          "type": "boolean",
+          "default": true,
+          "description": "Before prompting, ensure the selected LM Studio model is loaded with an adequate context length (uses the lms CLI). Prevents the 'tokens to keep > context length' error from small default context windows."
+        },
+        "lmstudioCode.minContextLength": {
+          "type": "number",
+          "default": 32768,
+          "description": "Minimum context length to (re)load models with when autoEnsureContext is enabled. OpenCode's agent system prompt + tools alone use ~11k tokens, so keep this comfortably large."
+        },
+        "lmstudioCode.defaultThinkingEffort": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "off",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Use each model's own default reasoning behavior",
+            "Suppress reasoning entirely (sends reasoning_effort: none)",
+            "Minimal reasoning",
+            "Moderate reasoning",
+            "Maximum reasoning"
+          ],
+          "description": "Starting reasoning effort for models you haven't set one for. Models that report only on/off reasoning collapse low/medium/high to a single 'On'; models reporting no reasoning support hide the control entirely."
+        },
+        "lmstudioCode.gpuOffload": {
+          "type": "string",
+          "default": "max",
+          "description": "GPU offload ratio passed to 'lms load' when reloading a model for context (off | max | 0..1)."
+        },
+        "lmstudioCode.healthCheckSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 600,
+          "description": "How often (seconds) to check that LM Studio is reachable and refresh model state while connected. While disconnected the extension retries every 5 seconds regardless, and the model list refreshes immediately whenever the model picker is open. Lower values react faster but add more requests to LM Studio's server log. Takes effect within one poll cycle."
+        },
+        "lmstudioCode.mcpServers": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "MCP (Model Context Protocol) servers to make available to the agent, as a map of `name \u2192 server`. Each server is either a local (stdio) command or a remote (http/sse) URL.\n\nServers configured for **Claude Code** (`.mcp.json` at the workspace root) and **VS Code Copilot** (`.vscode/mcp.json` and the user `mcp` setting) are also discovered automatically \u2014 use this setting to add servers specific to LM Studio Code, or to override a discovered one. Entries here take precedence on a name collision.\n\nLocal (stdio) example:\n```json\n{\n  \"playwright\": { \"command\": \"npx\", \"args\": [\"-y\", \"@playwright/mcp@latest\"] }\n}\n```\nRemote (http/sse) example:\n```json\n{\n  \"docs\": { \"type\": \"http\", \"url\": \"https://example.com/mcp\", \"headers\": { \"Authorization\": \"Bearer ${MY_TOKEN}\" } }\n}\n```\n`${VAR}` references are resolved from the environment before launch. Set `\"enabled\": false` to keep a server defined but off. Note: each MCP server adds its tool schemas to the model's context, which is limited on local models \u2014 enable only what you need.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "stdio",
+                  "remote",
+                  "http",
+                  "sse"
+                ],
+                "description": "Transport. Local/stdio runs a command; remote/http/sse connects to a URL. Inferred from the fields when omitted."
+              },
+              "command": {
+                "type": [
+                  "string",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Executable to run for a local server (string), with arguments in 'args'."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Arguments passed to the local server command."
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Environment variables for a local server. Values may use ${VAR} references."
+              },
+              "url": {
+                "type": "string",
+                "description": "Endpoint URL for a remote server."
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "HTTP headers for a remote server. Values may use ${VAR} references (e.g. an API token)."
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Set false to keep the server defined but not started."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && node esbuild.js",
+    "check-types": "tsc --noEmit",
+    "check-types:test": "tsc -p tsconfig.test.json",
+    "watch": "node esbuild.js --watch",
+    "package": "npm run check-types && node esbuild.js --production",
+    "bundle:opencode": "node scripts/fetch-opencode.js",
+    "package:vsix": "vsce package",
+    "package:vsix:bundled": "npm run bundle:opencode && vsce package --target ${VSCE_TARGET:-$(node -p \"process.platform+'-'+process.arch\")}",
+    "test": "npm run check-types:test && node esbuild.test.js && node --test \"out-test/**/*.test.js\"",
+    "test:watch": "node esbuild.test.js && node --test --watch \"out-test/**/*.test.js\"",
+    "compile:integration": "tsc -p tsconfig.integration.json",
+    "test:integration": "npm run compile && npm run compile:integration && node out-integration/test-integration/runTests.js"
+  },
+  "dependencies": {
+    "marked": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.104.0",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.20.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
+    "typescript": "^5.3.0"
+  }
+}

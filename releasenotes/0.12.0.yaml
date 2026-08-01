@@ -1,0 +1,15 @@
+version: 0.12.0
+date: 2026-07-11
+highlights:
+  - Per-server API keys — connect to remote LM Studio instances that require authentication (LM Studio's native API keys, or any Bearer-checking reverse proxy). Keys live in VS Code's encrypted Secret Storage and are used by both model discovery and the agent's chat requests.
+  - Clear auth errors — a server that rejects your request (401) now says "LM Studio requires an API key" with a shortcut to fix it, instead of pretending the server is unreachable.
+added:
+  - An optional API key field (masked) when adding a server in the Servers menu.
+  - An Edit button (pencil) on every server row opening an Edit server dialog — change the name, URL, or API key. Leaving the key field untouched keeps the stored key; an explicit "Remove the stored key" checkbox is the only way to delete it.
+  - A small KEY badge on server rows that have a key configured.
+  - Keys are sent as a standard Authorization Bearer header on every LM Studio request — discovery, model load/unload, and the agent's completions all authenticate identically.
+changed:
+  - Renaming a server no longer restarts your live session — the connection only re-establishes when the URL or API key actually changed.
+  - Security hardening for how the agent process receives the key — it's referenced from a permission-restricted file in the extension's private storage rather than embedded in the process environment, so tools spawned by the agent (e.g. MCP servers) never inherit the secret.
+fixed: []
+removed: []

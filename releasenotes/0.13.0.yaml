@@ -1,0 +1,18 @@
+version: 0.13.0
+date: 2026-07-18
+highlights:
+  - Pre-release (beta) — this is the first release on the Marketplace pre-release channel. Odd minor versions (0.13.x) are betas, even minors are stable; use "Switch to Pre-Release Version" on the extension's Marketplace page to opt in.
+  - Far quieter polling (issue #7) — LM Studio's developer log is no longer flooded with model-list queries. The health check now runs every 30 seconds by default (configurable), uses LM Studio's lightweight liveness endpoint instead of listing models, and is shared across all open chat panels instead of duplicated per panel.
+  - No more mid-generation hiccups — a saturated server that answers slowly no longer flips the panel to "Can't reach LM Studio" and back; the offline banner now requires several consecutive timeouts (a refused connection still flips immediately, and reconnect retries stay at 5 seconds while offline).
+added:
+  - New setting lmstudioCode.healthCheckSeconds (default 30, range 5-600) — how often to check LM Studio reachability and refresh model state while connected.
+  - The model picker now fast-refreshes (about every 4s) while it is open, so loaded/unloaded state is fresh exactly when you're looking at it — and stops the moment it closes.
+  - An end-to-end test suite that runs a fake LM Studio server and verifies the polling cadence, the picker fast-poll, timeout hysteresis, and offline/recovery behavior against the real extension.
+changed:
+  - The periodic health probe now uses LM Studio's /lmstudio-greeting liveness endpoint (the same one the lms CLI checks) instead of /v1/models, with automatic fallback for servers that don't serve it. Connect attempts still validate via /v1/models so API-key problems surface with the right message.
+  - Model-list refreshes are skipped while a panel is hidden, deduplicated across panels, and only re-sent to the UI when something actually changed — a background refresh can no longer close an open model menu, clear an in-flight load spinner, or reset the list's scroll position.
+  - A reconnect no longer silently switches your model back to lmstudioCode.defaultModel — the model you picked in the session always wins while it exists.
+fixed:
+  - Repeated model-list queries in LM Studio's developer log while the extension was idle (issue #7, reported by vhomelab with diagnosis help from m-a-evans).
+  - The offline banner appearing (and input being blocked) during long generations because a single health probe timed out while the server was busy.
+removed: []

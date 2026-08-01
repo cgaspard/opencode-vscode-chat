@@ -1,0 +1,14 @@
+version: 0.3.0
+date: 2026-06-08
+highlights:
+  - Clarifying questions — the assistant can now ask you a question mid-task and you answer it with a click. A clean picker appears in the chat with the model's options; pick one (or several), type your own answer, or skip, and the run continues with your choice.
+added:
+  - Interactive question picker for the built-in `question` tool — single- or multi-select options, an optional free-text answer, a "Skip" that lets the run continue, and a tabbed wizard when the model asks several questions at once. Answered questions render as a resolved summary.
+  - Questions are enabled in the OpenCode server config (`permission.question: allow`) so the picker surfaces immediately instead of behind a redundant approval gate.
+  - Fallback parsing — if a model prints the question JSON as plain text instead of calling the tool, the panel detects the complete payload mid-stream and still shows the picker.
+  - Unit tests covering the question wire format (answer building, empty-answer detection, streaming-safe blob parsing) and the updated agent prompts.
+changed:
+  - The build/plan agent prompts now instruct the model to act on your answer immediately (no re-asking or re-listing), and to offer genuinely distinct, ungraded options — recommendations are marked with a "(Recommended)" label rather than hinted in the description.
+fixed:
+  - Session-scoped events that arrive before a session is active are now dropped, so a stray event during init can't leak into the chat view.
+removed: []

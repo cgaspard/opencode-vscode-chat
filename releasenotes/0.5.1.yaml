@@ -1,0 +1,9 @@
+version: 0.5.1
+date: 2026-06-28
+highlights:
+  - Fix the Load/Eject button contrast on the selected model row so it stays readable against the highlight.
+added: []
+removed: []
+changed: []
+fixed:
+  - The Load/Eject button on the currently-selected model in the picker was hard to read against the selection highlight; it's now styled against the selection's own foreground color so it stays legible across themes.
