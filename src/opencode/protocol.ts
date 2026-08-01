@@ -17,14 +17,56 @@ export interface Session {
   time: { created: number; updated: number };
 }
 
+/**
+ * One model as `GET /config/providers` describes it. Verified against OpenCode
+ * 1.18.4: every field here comes back for catalog models (Anthropic, OpenAI,
+ * Google, …) and the subset we declare comes back for local ones. Kept loose —
+ * a field the catalog adds later must never break parsing.
+ */
+export interface ProviderModelInfo {
+  id?: string;
+  name?: string;
+  family?: string;
+  capabilities?: {
+    reasoning?: boolean;
+    toolcall?: boolean;
+    attachment?: boolean;
+    temperature?: boolean;
+    input?: { text?: boolean; image?: boolean; audio?: boolean; pdf?: boolean; video?: boolean };
+    output?: { text?: boolean; image?: boolean; audio?: boolean };
+  };
+  /** USD per million tokens. */
+  cost?: { input?: number; output?: number; cache?: { read?: number; write?: number } };
+  limit?: { context?: number; input?: number; output?: number };
+  /**
+   * The model's own reasoning-effort variants, keyed by the name to send as
+   * `PromptBody.variant` — e.g. Anthropic low/medium/high/max, OpenAI
+   * medium/high/xhigh. Absent on models with no selectable reasoning.
+   */
+  variants?: Record<string, unknown>;
+  status?: string;
+  release_date?: string;
+}
+
 export interface ProviderInfo {
   id: string;
   name: string;
-  models: Record<string, { name?: string }>;
+  /** Where the credentials came from: 'config' (ours), 'env', 'custom', … */
+  source?: string;
+  /** Env var names this provider would also read a key from. */
+  env?: string[];
+  models: Record<string, ProviderModelInfo>;
 }
 
+/**
+ * `GET /config/providers`. Returns ONLY providers that are credentialed —
+ * verified: a bare config returns just OpenCode's builtin. So this is the
+ * authority on "what can I use right now", never on "what could I add" (that
+ * is the models.dev catalog; see src/providers/catalog.ts).
+ */
 export interface ProvidersResponse {
   providers: ProviderInfo[];
+  /** Each provider's default model id, keyed by provider id. */
   default: Record<string, string>;
 }
 

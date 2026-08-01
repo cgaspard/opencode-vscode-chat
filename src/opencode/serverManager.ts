@@ -8,9 +8,11 @@ import { resolveBinaryPath } from '../core/binary';
 import { clampContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
 import { augmentedPath } from '../core/mcp';
-import { LMStudioClient } from '../lmstudio/client';
+import type { ProviderConnection } from '../core/providers';
+import type { LocalEndpoints } from '../local/endpoints';
 import { log, logError } from '../logger';
 import { discoverMcpServers } from '../mcp/discovery';
+import type { ProviderRegistry } from '../providers/registry';
 import { OpencodeClient } from './client';
 import { BUILD_PROMPT, PLAN_PROMPT } from './prompts';
 
@@ -24,9 +26,10 @@ export interface Disposable {
 }
 
 /**
- * Owns the lifecycle of a headless `opencode serve` process, configured to talk
- * to the local LM Studio server. Config is injected via OPENCODE_CONFIG_CONTENT
- * so nothing is written to the user's workspace or global config.
+ * Owns the lifecycle of a headless `opencode serve` process, configured with
+ * every provider the user has enabled. Config is injected via
+ * OPENCODE_CONFIG_CONTENT so nothing is written to the user's workspace or
+ * global config.
  */
 export class OpencodeServerManager {
   private proc: ChildProcess | undefined;
@@ -34,10 +37,11 @@ export class OpencodeServerManager {
   private client: OpencodeClient | undefined;
   private starting: Promise<ServerStartResult> | undefined;
   /**
-   * The (LM Studio baseUrl, apiKey) pair the running server's config was built
-   * from. The config is baked into the process at spawn, so if either changes
-   * afterwards (server switch, key edit) the running instance is stale and
-   * start() must respawn instead of reusing it.
+   * A fingerprint of the provider set the running server's config was built
+   * from. The config is baked into the process at spawn, so if anything it
+   * depends on changes afterwards (a provider added or removed, a key edited, a
+   * base URL changed) the running instance is stale and start() must respawn
+   * instead of reusing it.
    */
   private bakedIdentity: string | undefined;
   private readonly exitListeners = new Set<() => void>();
@@ -46,7 +50,8 @@ export class OpencodeServerManager {
 
   constructor(
     private readonly cfg: ExtensionConfig,
-    private readonly lmStudio: LMStudioClient,
+    private readonly registry: ProviderRegistry,
+    private readonly endpoints: LocalEndpoints,
     /** Extension install dir — holds the bundled `bin/opencode[.exe]`. */
     private readonly extensionPath: string,
     /** Private data dir for our managed server, isolated from the user's. */
@@ -67,20 +72,37 @@ export class OpencodeServerManager {
     return { dispose: () => this.exitListeners.delete(cb) };
   }
 
-  private currentIdentity(): string {
-    return JSON.stringify([this.lmStudio.getBaseUrl(), this.lmStudio.getApiKey() ?? null]);
+  /**
+   * Fingerprint of everything the injected config depends on. Includes the key
+   * *values*, not just their presence, so rotating a key respawns the server —
+   * a stale process would keep authenticating with the old one.
+   */
+  private async currentIdentity(): Promise<string> {
+    const conns = await this.registry.enabledWithKeys();
+    return JSON.stringify(
+      conns
+        .map(({ conn, apiKey }) => [
+          conn.providerID,
+          conn.kind,
+          conn.baseUrl ?? null,
+          conn.flavor ?? null,
+          apiKey ?? null,
+        ])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    );
   }
 
   /** Start (or return the in-flight start of) the server. Idempotent. */
   async start(): Promise<ServerStartResult> {
     if (this.client && this.baseUrl) {
-      if (this.bakedIdentity === this.currentIdentity()) {
+      if (this.bakedIdentity === (await this.currentIdentity())) {
         return { baseUrl: this.baseUrl, client: this.client };
       }
-      // The LM Studio url/key changed since this instance was configured
-      // (e.g. a key edit, or a spawn that raced ahead of key hydration) —
-      // reusing it would send chat requests with stale credentials.
-      log('opencode server config is stale (LM Studio url/key changed) — respawning');
+      // The provider set changed since this instance was configured (a provider
+      // added or removed, a key edited, a base URL changed, or a spawn that
+      // raced ahead of key hydration) — reusing it would send chat requests
+      // with stale credentials or miss a provider entirely.
+      log('opencode server config is stale (providers changed) — respawning');
       this.dispose();
     }
     if (this.starting) {
@@ -104,7 +126,7 @@ export class OpencodeServerManager {
     }
     await this.prepareBundledBinary(bin);
 
-    const bakedIdentity = this.currentIdentity();
+    const bakedIdentity = await this.currentIdentity();
     const configContent = await this.buildConfigContent();
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
     const env = this.buildEnv(configContent);
@@ -260,42 +282,60 @@ export class OpencodeServerManager {
     return env;
   }
 
-  /** Build the OPENCODE_CONFIG_CONTENT JSON injecting the LM Studio provider. */
+  /**
+   * Build the OPENCODE_CONFIG_CONTENT JSON declaring every enabled provider.
+   *
+   * Three shapes, one per connection kind:
+   *
+   *   builtin  Nothing is emitted. OpenCode serves its own hosted provider
+   *            unconditionally (verified: it answers prompts with no key), so
+   *            declaring it could only break it.
+   *   catalog  Just `options.apiKey`. Everything else — the model list, prices,
+   *            context limits, reasoning variants — comes from OpenCode's own
+   *            catalog, which is why 176 providers work with no per-provider
+   *            code here. Verified: a bare config returns only the builtin,
+   *            while injecting a key makes the provider and its full model list
+   *            appear in GET /config/providers.
+   *   local    A full openai-compatible declaration with the models enumerated
+   *            from the endpoint itself, because no catalog knows what someone
+   *            is running on their own machine.
+   */
   private async buildConfigContent(): Promise<string> {
-    const models: Record<string, Record<string, unknown>> = {};
-    const ctx = getConfig().minContextLength; // read fresh so context-size changes apply on restart
+    const provider: Record<string, unknown> = {};
+    let connections: Array<{ conn: ProviderConnection; apiKey?: string }> = [];
     try {
-      const list = await this.lmStudio.listModels();
-      for (const m of list) {
-        // OpenCode drops image attachments unless the model is declared with
-        // attachment + image modality. Align the context limit with the window
-        // we ensure-load so OpenCode compacts before LM Studio overflows — but
-        // never declare more context than the model actually supports.
-        const perModel = clampContext(ctx, m.maxContextLength);
-        models[m.id] = {
-          name: m.displayName,
-          attachment: !!m.vision,
-          reasoning: true,
-          tool_call: m.toolUse ?? true,
-          modalities: {
-            input: m.vision ? ['text', 'image'] : ['text'],
-            output: ['text'],
-          },
-          // Output budget: generous enough for reasoning models that emit long
-          // <think> blocks before answering (8192 truncated them mid-thought),
-          // but still a fraction of the window so input isn't crowded out.
-          limit: { context: perModel, output: Math.min(32768, Math.floor(perModel / 4)) },
-          // Reasoning-effort levels, selectable per message via PromptBody.variant.
-          // Declared unconditionally for every model — identical for all of them —
-          // so this config never depends on a user setting and changing effort
-          // never needs a server restart. Naming a variant the model doesn't
-          // support is a verified silent no-op, so over-declaring is free.
-          variants: variantsForModel(),
-        };
-      }
+      connections = await this.registry.enabledWithKeys();
     } catch (err) {
-      logError('could not enumerate LM Studio models for config', err);
+      logError('could not read the provider registry for config', err);
     }
+    this.pruneKeyFiles(connections.map(({ conn }) => conn.id));
+
+    for (const { conn, apiKey } of connections) {
+      if (conn.kind === 'builtin') {
+        continue;
+      }
+      if (conn.kind === 'catalog') {
+        if (!apiKey) {
+          // A keyless catalog provider would be declared but unusable, and
+          // would then show up in the picker as a provider with no models.
+          continue;
+        }
+        provider[conn.providerID] = { options: this.apiKeyOption(conn.id, apiKey) };
+        continue;
+      }
+      provider[conn.providerID] = {
+        npm: '@ai-sdk/openai-compatible',
+        name: conn.name,
+        options: {
+          baseURL: conn.baseUrl,
+          includeUsage: true,
+          // Same Bearer key discovery uses — for servers behind an auth proxy.
+          ...this.apiKeyOption(conn.id, apiKey),
+        },
+        ...(await this.localModelsFor(conn)),
+      };
+    }
+
     // MCP servers discovered from .mcp.json / .vscode/mcp.json / VS Code user
     // settings / our own `opencodeChat.mcpServers`. Tokens like ${VAR} are
     // already resolved to literals (OPENCODE_CONFIG_CONTENT is not substituted
@@ -321,48 +361,106 @@ export class OpencodeServerManager {
         build: { prompt: BUILD_PROMPT },
         plan: { prompt: PLAN_PROMPT },
       },
-      provider: {
-        lmstudio: {
-          npm: '@ai-sdk/openai-compatible',
-          name: 'LM Studio (local)',
-          options: {
-            baseURL: this.lmStudio.getBaseUrl(),
-            includeUsage: true,
-            // Same Bearer key discovery uses — for servers behind an auth proxy.
-            ...this.apiKeyOption(),
-          },
-          ...(Object.keys(models).length ? { models } : {}),
-        },
-      },
+      ...(Object.keys(provider).length ? { provider } : {}),
       ...(Object.keys(mcp).length ? { mcp } : {}),
     };
     return JSON.stringify(config);
   }
 
   /**
+   * The `models` block for a local endpoint, or {} when we could not enumerate
+   * it (a server that is down at spawn time still gets its provider declared,
+   * so it starts working as soon as it comes back).
+   */
+  private async localModelsFor(conn: ProviderConnection): Promise<Record<string, unknown>> {
+    const models: Record<string, Record<string, unknown>> = {};
+    const ctx = getConfig().minContextLength; // read fresh so context-size changes apply on restart
+    try {
+      const client = this.endpoints.get(conn.id);
+      const list = (await client?.listModels()) ?? [];
+      for (const m of list) {
+        // OpenCode drops image attachments unless the model is declared with
+        // attachment + image modality. Align the context limit with the window
+        // we ensure-load so OpenCode compacts before the server overflows — but
+        // never declare more context than the model actually supports.
+        const perModel = clampContext(ctx, m.maxContextLength);
+        models[m.id] = {
+          name: m.displayName,
+          attachment: !!m.vision,
+          reasoning: true,
+          tool_call: m.toolUse ?? true,
+          modalities: {
+            input: m.vision ? ['text', 'image'] : ['text'],
+            output: ['text'],
+          },
+          // Output budget: generous enough for reasoning models that emit long
+          // <think> blocks before answering (8192 truncated them mid-thought),
+          // but still a fraction of the window so input isn't crowded out.
+          limit: { context: perModel, output: Math.min(32768, Math.floor(perModel / 4)) },
+          // Reasoning-effort levels, selectable per message via PromptBody.variant.
+          // Declared unconditionally for every model — identical for all of them —
+          // so this config never depends on a user setting and changing effort
+          // never needs a server restart. Naming a variant the model doesn't
+          // support is a verified silent no-op, so over-declaring is free.
+          // Catalog models get no such table: they publish their own.
+          variants: variantsForModel(),
+        };
+      }
+    } catch (err) {
+      logError(`could not enumerate models for local endpoint ${conn.name}`, err);
+    }
+    return Object.keys(models).length ? { models } : {};
+  }
+
+  /** Directory holding the per-connection key files. */
+  private get keyDir(): string {
+    return path.join(this.dataDir, 'keys');
+  }
+
+  /**
    * Provider `apiKey` option for the injected config. OPENCODE_CONFIG_CONTENT
    * is process environment, and OpenCode's stdio MCP servers inherit that
    * environment — so a literal key there would be handed to every third-party
-   * MCP process. Instead the key is written to a 0600 file in our private
-   * dataDir and referenced via OpenCode's `{file:...}` placeholder, which is
-   * substituted when the server loads the config (verified against 1.17.18).
-   * Falls back to the literal only if the file can't be written.
+   * MCP process. Instead each key is written to its own 0600 file in our
+   * private dataDir and referenced via OpenCode's `{file:...}` placeholder,
+   * which is substituted when the server loads the config (verified against
+   * 1.18.4). Falls back to the literal only if the file can't be written.
    */
-  private apiKeyOption(): Record<string, string> {
-    const apiKey = this.lmStudio.getApiKey();
-    const keyFile = path.join(this.dataDir, 'lmstudio-api-key');
+  private apiKeyOption(connectionId: string, apiKey: string | undefined): Record<string, string> {
+    const keyFile = path.join(this.keyDir, connectionId);
     if (!apiKey) {
       fs.rmSync(keyFile, { force: true });
       return {};
     }
     try {
-      fs.mkdirSync(this.dataDir, { recursive: true });
+      fs.mkdirSync(this.keyDir, { recursive: true, mode: 0o700 });
       fs.writeFileSync(keyFile, apiKey, { mode: 0o600 });
       fs.chmodSync(keyFile, 0o600); // writeFileSync mode only applies on create
       return { apiKey: `{file:${keyFile}}` };
     } catch (err) {
       logError('could not write api key file; passing key inline', err);
       return { apiKey };
+    }
+  }
+
+  /**
+   * Delete key files whose connection no longer exists. Without this, removing
+   * a provider would leave its key readable on disk indefinitely — the registry
+   * drops the SecretStorage entry, so this file would be the only copy left.
+   */
+  private pruneKeyFiles(liveIds: string[]): void {
+    const live = new Set(liveIds);
+    try {
+      if (!fs.existsSync(this.keyDir)) {
+        return;
+      }
+      for (const name of fs.readdirSync(this.keyDir)) {
+        if (!live.has(name)) {
+          fs.rmSync(path.join(this.keyDir, name), { force: true });
+        }
+      }
+    } catch (err) {
+      logError('could not prune stale api key files', err);
     }
   }
 

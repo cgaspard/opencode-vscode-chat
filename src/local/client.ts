@@ -2,9 +2,10 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { lmStudioRestRoot } from '../config';
+import { restRoot } from '../config';
 import type { ReasoningCapability } from '../core/effort';
 import { ProbeStatus } from '../core/health';
+import type { LocalFlavor } from '../core/providers';
 import { log, logError } from '../logger';
 
 /**
@@ -25,7 +26,7 @@ function isTimeoutError(err: unknown): boolean {
   );
 }
 
-export interface LMStudioModel {
+export interface LocalModel {
   id: string;
   displayName: string;
   type: string; // llm | vlm | embedding | ...
@@ -39,20 +40,32 @@ export interface LMStudioModel {
   publisher?: string; // e.g. "unsloth", "lmstudio-community" — disambiguates same-named models
   format?: string; // runtime format, e.g. "MLX" or "GGUF" (from compatibility_type)
   /**
-   * Declared reasoning support, from `/api/v1/models` capabilities.reasoning.
-   * `null` = the model explicitly reports none (hide the effort control);
-   * `undefined` = unknown, because only /api/v1 can report this and we may have
-   * come in via an older fallback endpoint. Unknown is never treated as
+   * Declared reasoning support, from LM Studio's `/api/v1/models`
+   * capabilities.reasoning. `null` = the model explicitly reports none (hide the
+   * effort control); `undefined` = unknown, because only LM Studio reports this
+   * and a plain OpenAI-compatible server cannot. Unknown is never treated as
    * unsupported — see src/core/effort.ts.
    */
   reasoning?: ReasoningCapability | null;
 }
 
-/** Discovery + lifecycle helper for a local LM Studio server. */
-export class LMStudioClient {
+/**
+ * Discovery + lifecycle helper for one local, OpenAI-compatible inference
+ * server (LM Studio, Ollama, vLLM, or anything else that speaks /v1).
+ *
+ * Everything here works against the plain OpenAI-compatible surface. LM Studio
+ * additionally exposes a native REST API that reports real model metadata
+ * (context windows, quantization, tool/vision/reasoning capability, load state)
+ * and can load or eject models — a meaningful difference for local models,
+ * where a too-small context window is the single most common failure. Those
+ * extras are gated on `flavor === 'lmstudio'`; every other server degrades to
+ * the generic path, which is always safe.
+ */
+export class LocalClient {
   constructor(
     private baseUrl: string,
     private apiKey?: string,
+    private flavor: LocalFlavor = 'openai-compatible',
   ) {}
 
   /** Cached probe result so sibling panels' health ticks share one request. */
@@ -60,7 +73,7 @@ export class LMStudioClient {
   /** Whether this server answers the cheap /lmstudio-greeting liveness probe. */
   private greetingSupported: boolean | undefined;
   /** In-flight model listing, shared by concurrent callers. */
-  private listing: Promise<LMStudioModel[]> | undefined;
+  private listing: Promise<LocalModel[]> | undefined;
 
   setBaseUrl(url: string): void {
     if (url !== this.baseUrl) {
@@ -76,7 +89,23 @@ export class LMStudioClient {
     return this.baseUrl;
   }
 
-  /** Bearer key for servers behind an authenticating proxy (per LmServer). */
+  getFlavor(): LocalFlavor {
+    return this.flavor;
+  }
+
+  setFlavor(flavor: LocalFlavor): void {
+    if (flavor !== this.flavor) {
+      this.listing = undefined; // a different flavor lists models differently
+    }
+    this.flavor = flavor;
+  }
+
+  /** True when this endpoint supports load/eject and context enforcement. */
+  get supportsLifecycle(): boolean {
+    return this.flavor === 'lmstudio';
+  }
+
+  /** Bearer key for servers behind an authenticating proxy. */
   setApiKey(key: string | undefined): void {
     const next = (key ?? '').trim() || undefined;
     if (next !== this.apiKey) {
@@ -93,15 +122,15 @@ export class LMStudioClient {
   }
 
   private get rest(): string {
-    return lmStudioRestRoot(this.baseUrl);
+    return restRoot(this.baseUrl);
   }
 
   /**
-   * Fetch headers for this server. LM Studio itself is unauthenticated; the
-   * key exists for remote instances behind a reverse proxy, sent as a
-   * standard OpenAI-style `Authorization: Bearer` (the same scheme the chat
-   * path uses via the provider's `apiKey` option, so discovery and inference
-   * always authenticate identically).
+   * Fetch headers for this server. Local servers are typically
+   * unauthenticated; the key exists for instances behind a reverse proxy, sent
+   * as a standard OpenAI-style `Authorization: Bearer` (the same scheme the
+   * chat path uses via the provider's `apiKey` option, so discovery and
+   * inference always authenticate identically).
    */
   private headers(extra?: Record<string, string>): Record<string, string> {
     return {
@@ -116,8 +145,8 @@ export class LMStudioClient {
    * from 'unreachable', so callers can say "fix your key" instead of "start
    * the server". 'timeout' means it didn't answer in time — a saturated server
    * mid-generation looks like this, so callers must not treat it as proof the
-   * server is gone. Used for deliberate connects (doInit); the periodic health
-   * loop uses the cheaper `probeHealth` instead.
+   * server is gone. Used for deliberate connects; the periodic health loop uses
+   * the cheaper `probeHealth` instead.
    */
   async checkConnectionStatus(): Promise<ProbeStatus> {
     try {
@@ -135,11 +164,11 @@ export class LMStudioClient {
   }
 
   /**
-   * Cheap liveness probe for the periodic health loop. Primary is LM Studio's
-   * `/lmstudio-greeting` — the same endpoint the first-party `lms` CLI health
-   * checks; it is auth-exempt and far lighter than a model listing. Servers
-   * that don't serve it (older builds, reverse proxies) permanently fall back
-   * to the auth-aware `${baseUrl}/models` probe.
+   * Cheap liveness probe for the periodic health loop. On LM Studio the primary
+   * is `/lmstudio-greeting` — the same endpoint the first-party `lms` CLI health
+   * checks; it is auth-exempt and far lighter than a model listing. Servers that
+   * don't serve it (other flavors, older builds, reverse proxies) permanently
+   * fall back to the auth-aware `${baseUrl}/models` probe.
    *
    * Because the greeting bypasses auth, the cheap probe deliberately does NOT
    * detect a key going bad mid-session — that surfaces on the next user
@@ -175,7 +204,7 @@ export class LMStudioClient {
     // Snapshot the target: a probe still in flight across a server switch must
     // not write its verdicts onto the new server's state.
     const url = this.baseUrl;
-    if (this.greetingSupported !== false) {
+    if (this.flavor === 'lmstudio' && this.greetingSupported !== false) {
       try {
         const res = await fetch(`${this.rest}/lmstudio-greeting`, {
           signal: AbortSignal.timeout(3000),
@@ -205,19 +234,10 @@ export class LMStudioClient {
 
   /**
    * List chat-capable models (embeddings filtered out), richest metadata first.
-   *
-   * Primary source is `/api/v1/models`: it's the *canonical* keyed list (one
-   * entry per model, keyed by e.g. "unsloth/qwen3.6-27b-mlx"), which LM Studio's
-   * own UI uses. `/api/v0/models` is avoided as the primary because it can
-   * surface a phantom duplicate of a loaded model under its bare instance id
-   * (e.g. both "qwen3.6-27b-mlx" and "unsloth/qwen3.6-27b-mlx"). The `key`
-   * doubles as the model id everywhere — LM Studio accepts it for load and for
-   * `/v1/chat/completions` inference, resolving it to the loaded instance.
-   *
-   * Concurrent callers (health refresh + a user send + a sibling panel) share
-   * one in-flight request instead of each hitting the server.
+   * LM Studio has a native catalog worth using; everything else goes through the
+   * OpenAI-compatible `/v1/models`, which carries an id and nothing more.
    */
-  async listModels(): Promise<LMStudioModel[]> {
+  async listModels(): Promise<LocalModel[]> {
     if (this.listing) {
       return this.listing;
     }
@@ -230,7 +250,28 @@ export class LMStudioClient {
     return p;
   }
 
-  private async doListModels(): Promise<LMStudioModel[]> {
+  private async doListModels(): Promise<LocalModel[]> {
+    if (this.flavor === 'lmstudio') {
+      const rich = await this.listLmStudioModels();
+      if (rich.length) {
+        return rich;
+      }
+    }
+    return this.listOpenAiModels();
+  }
+
+  /**
+   * LM Studio's native catalog.
+   *
+   * Primary source is `/api/v1/models`: it's the *canonical* keyed list (one
+   * entry per model, keyed by e.g. "unsloth/qwen3.6-27b-mlx"), which LM Studio's
+   * own UI uses. `/api/v0/models` is avoided as the primary because it can
+   * surface a phantom duplicate of a loaded model under its bare instance id
+   * (e.g. both "qwen3.6-27b-mlx" and "unsloth/qwen3.6-27b-mlx"). The `key`
+   * doubles as the model id everywhere — LM Studio accepts it for load and for
+   * `/v1/chat/completions` inference, resolving it to the loaded instance.
+   */
+  private async listLmStudioModels(): Promise<LocalModel[]> {
     try {
       const res = await fetch(`${this.rest}/api/v1/models`, {
         signal: AbortSignal.timeout(8000),
@@ -243,7 +284,7 @@ export class LMStudioClient {
           .filter(
             (m) => m && typeof m.key === 'string' && !/embed/i.test(m.type ?? '') && !/embed/i.test(m.key),
           )
-          .map((m): LMStudioModel => {
+          .map((m): LocalModel => {
             const instance = (m.loaded_instances ?? [])[0];
             const caps = m.capabilities ?? {};
             return {
@@ -287,7 +328,7 @@ export class LMStudioClient {
         const arr = json.data ?? [];
         return arr
           .filter((m) => m && !/embed/i.test(m.type ?? '') && !/embed/i.test(m.id ?? ''))
-          .map((m): LMStudioModel => ({
+          .map((m): LocalModel => ({
             id: m.id,
             displayName: prettyName(m.id),
             type: m.type ?? 'llm',
@@ -305,7 +346,11 @@ export class LMStudioClient {
     } catch (err) {
       logError('listModels via /api/v0/models failed, falling back to /v1/models', err);
     }
-    // Last resort: OpenAI-compatible endpoint (no rich metadata).
+    return [];
+  }
+
+  /** The OpenAI-compatible listing every local server supports. */
+  private async listOpenAiModels(): Promise<LocalModel[]> {
     try {
       const res = await fetch(`${this.baseUrl}/models`, {
         signal: AbortSignal.timeout(8000),
@@ -314,8 +359,8 @@ export class LMStudioClient {
       if (res.ok) {
         const json = (await res.json()) as { data?: any[] };
         return (json.data ?? [])
-          .filter((m) => m && !/embed/i.test(m.id))
-          .map((m): LMStudioModel => ({ id: m.id, displayName: prettyName(m.id), type: 'llm' }));
+          .filter((m) => m && typeof m.id === 'string' && !/embed/i.test(m.id))
+          .map((m): LocalModel => ({ id: m.id, displayName: prettyName(m.id), type: 'llm' }));
       }
     } catch (err) {
       logError('listModels via /v1/models failed', err);
@@ -324,7 +369,7 @@ export class LMStudioClient {
   }
 
   /** Find a single model's current metadata. */
-  async getModel(modelId: string): Promise<LMStudioModel | undefined> {
+  async getModel(modelId: string): Promise<LocalModel | undefined> {
     const models = await this.listModels();
     return models.find((m) => m.id === modelId);
   }
@@ -332,7 +377,8 @@ export class LMStudioClient {
   /**
    * Ensure `modelId` is loaded with at least `minContext` tokens of context.
    * Uses LM Studio's native REST API (`/api/v1/models/load|unload`); falls back
-   * to the `lms` CLI only if REST is unavailable. Never throws.
+   * to the `lms` CLI only if REST is unavailable. A no-op on servers that do not
+   * expose a load lifecycle. Never throws.
    */
   async ensureContext(
     modelId: string,
@@ -340,10 +386,13 @@ export class LMStudioClient {
     gpu: string,
     onProgress?: (msg: string) => void,
   ): Promise<{ reloaded: boolean; context?: number; note?: string }> {
+    if (!this.supportsLifecycle) {
+      return { reloaded: false };
+    }
     try {
       const model = await this.getModel(modelId);
       if (!model) {
-        return { reloaded: false, note: 'model not found in LM Studio' };
+        return { reloaded: false, note: 'model not found on the server' };
       }
       const cap = model.maxContextLength ?? minContext;
       const target = Math.min(minContext, cap);
@@ -432,6 +481,9 @@ export class LMStudioClient {
    * `key`/`id` OR any loaded instance id — otherwise an eject silently no-ops.
    */
   async loadedInstanceIds(modelId: string): Promise<string[]> {
+    if (!this.supportsLifecycle) {
+      return [];
+    }
     try {
       const res = await fetch(`${this.rest}/api/v1/models`, {
         signal: AbortSignal.timeout(8000),
@@ -462,6 +514,41 @@ export class LMStudioClient {
       return [];
     }
   }
+}
+
+/**
+ * Work out what a local endpoint is, by asking it. Each vendor answers a
+ * distinctive endpoint: LM Studio serves `/lmstudio-greeting`, Ollama serves
+ * `/api/tags`, vLLM serves `/version`. Anything else that answers `/v1/models`
+ * is a generic OpenAI-compatible server, which is a perfectly good outcome —
+ * the flavor only unlocks extras, it never gates basic use.
+ *
+ * Returns null when nothing answers at all, which the autodetect treats as
+ * "no server here".
+ */
+export async function detectFlavor(baseUrl: string, timeoutMs = 1500): Promise<LocalFlavor | null> {
+  const root = restRoot(baseUrl);
+  const ping = async (url: string): Promise<boolean> => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+  if (await ping(`${root}/lmstudio-greeting`)) {
+    return 'lmstudio';
+  }
+  if (await ping(`${root}/api/tags`)) {
+    return 'ollama';
+  }
+  if (await ping(`${root}/version`)) {
+    return 'vllm';
+  }
+  if (await ping(`${baseUrl}/models`)) {
+    return 'openai-compatible';
+  }
+  return null;
 }
 
 function prettyName(id: string): string {

@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { getConfig } from './config';
-import { ServerRegistry } from './connection';
-import { LMStudioClient } from './lmstudio/client';
+import { LocalEndpoints, syncEndpointsFromRegistry } from './local/endpoints';
 import { initLogger, log, showLogs } from './logger';
 import { OpencodeServerManager } from './opencode/serverManager';
 import { BridgeDeps } from './panel/bridge';
+import { ProviderCatalog } from './providers/catalog';
+import { ProviderRegistry } from './providers/registry';
 import { attachTestWebview, registerTestCommands } from './test-integration/testHook';
 import { ChatViewProvider, openChatPanel } from './panel/chatViewProvider';
 
@@ -19,19 +20,20 @@ export function activate(context: vscode.ExtensionContext): void {
   log('activating OpenCode Chat');
 
   const cfg = getConfig();
-  const servers = new ServerRegistry(context, cfg.lmStudioBaseUrl);
-  const lmStudio = new LMStudioClient(servers.active().url);
-  // Hydrate the active server's key early (SecretStorage is async, activate is
-  // not). Consumers that spawn OpenCode re-resolve it themselves; this only
-  // narrows the window where the shared client is keyless.
-  void servers.apiKeyFor(servers.active().id).then((key) => lmStudio.setApiKey(key));
+  const registry = new ProviderRegistry(context);
+  const endpoints = new LocalEndpoints();
+  // Hydrate the local endpoints' clients early (SecretStorage is async, activate
+  // is not). Consumers that spawn OpenCode re-sync themselves; this only narrows
+  // the window where a client is keyless.
+  void syncEndpointsFromRegistry(registry, endpoints);
   // Bundled binary lives under the extension dir; the managed server's on-disk
   // state is sandboxed under globalStorage so it never collides with a user's
   // own OpenCode install.
   const dataDir = vscode.Uri.joinPath(context.globalStorageUri, 'opencode').fsPath;
-  server = new OpencodeServerManager(cfg, lmStudio, context.extensionPath, dataDir);
+  const catalog = new ProviderCatalog(dataDir);
+  server = new OpencodeServerManager(cfg, registry, endpoints, context.extensionPath, dataDir);
 
-  const deps: BridgeDeps = { context, server, lmStudio, servers };
+  const deps: BridgeDeps = { context, server, registry, endpoints, catalog };
 
   // The `secondarySidebar` viewsContainers slot needs VS Code >= 1.106. On
   // older builds, flip this context key so the activitybar fallback shows
@@ -75,13 +77,11 @@ export function activate(context: vscode.ExtensionContext): void {
         { location: vscode.ProgressLocation.Notification, title: 'Restarting OpenCode server…' },
         async () => {
           try {
-            // Mirror doInit: the provider config is baked at spawn from the
-            // shared client, which may not have been hydrated yet if no panel
-            // has connected — resolve the active server's url+key first.
-            const active = servers.active();
-            const apiKey = await servers.apiKeyFor(active.id);
-            lmStudio.setBaseUrl(active.url);
-            lmStudio.setApiKey(apiKey);
+            // Mirror doInit: the provider config is baked at spawn and
+            // enumerates local models through the endpoint pool, which may not
+            // have been hydrated yet if no panel has connected — reconcile it
+            // against the registry first.
+            await syncEndpointsFromRegistry(registry, endpoints);
             await server!.restart();
             vscode.window.showInformationMessage('OpenCode Chat: OpenCode server restarted.');
           } catch (err) {
@@ -98,7 +98,6 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (
-        e.affectsConfiguration('opencodeChat.lmStudioBaseUrl') ||
         e.affectsConfiguration('opencodeChat.opencodePath') ||
         e.affectsConfiguration('opencodeChat.serverPort') ||
         // MCP servers are baked into the injected config at spawn time, so a
@@ -124,20 +123,19 @@ export function activate(context: vscode.ExtensionContext): void {
         const panel = openChatPanel(context.extensionUri, deps);
         attachTestWebview(panel.webview);
       }),
-      // Point the extension at a test-controlled server (the e2e polling suite
-      // runs a fake LM Studio in-process). Returns what restoreServer needs to
-      // undo the registry mutation so state never leaks across runs.
+      // Point the extension at a test-controlled endpoint (the e2e polling
+      // suite runs a fake LM Studio in-process). Returns what restoreServer
+      // needs to undo the registry mutation so state never leaks across runs.
       vscode.commands.registerCommand('opencodeChat._test.useServer', async (url: string) => {
-        const prevActiveId = deps.servers.active().id;
-        const added = await deps.servers.add('E2E Fake', url);
-        await deps.servers.setActive(added.id);
-        return { id: added.id, prevActiveId };
+        const added = await deps.registry.addLocal('E2E Fake', url, { flavor: 'lmstudio' });
+        await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
+        return { id: added.id };
       }),
       vscode.commands.registerCommand(
         'opencodeChat._test.restoreServer',
-        async (state: { id: string; prevActiveId: string }) => {
-          await deps.servers.setActive(state.prevActiveId);
-          await deps.servers.remove(state.id);
+        async (state: { id: string }) => {
+          await deps.registry.remove(state.id);
+          await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
         },
       ),
     );

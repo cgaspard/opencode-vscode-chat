@@ -1,13 +1,25 @@
 // Message protocol shared between the extension host and the webview.
 import type { EffortLevel, ReasoningCapability } from './core/effort';
+import type { ConnectionKind, LocalFlavor } from './core/providers';
 import type { MessageWithParts, OpencodeEvent, PermissionResponse } from './opencode/protocol';
 
-export type { EffortLevel, ReasoningCapability };
+export type { ConnectionKind, EffortLevel, LocalFlavor, ReasoningCapability };
 
 export interface UiModel {
+  /** Provider-qualified reference, "<providerID>/<modelID>" — unique, and what selection stores. */
   id: string;
+  /** The provider this model is served by. */
+  providerID: string;
+  /** That provider's display name, for the picker's grouping header. */
+  providerName: string;
+  providerKind: ConnectionKind;
+  /** The bare model id the provider knows it by. */
+  modelID: string;
   name: string;
-  loaded: boolean;
+  /** Whether the model is loaded in memory. Only local endpoints report this. */
+  loaded?: boolean;
+  /** True when this model can be loaded/ejected from the picker (LM Studio only). */
+  lifecycle?: boolean;
   contextLength?: number;
   maxContextLength?: number;
   toolUse?: boolean;
@@ -15,6 +27,8 @@ export interface UiModel {
   publisher?: string; // disambiguates same-named models (e.g. unsloth vs lmstudio-community)
   quantization?: string; // e.g. "8bit", "Q8_0"
   format?: string; // runtime format, e.g. "MLX" or "GGUF"
+  /** USD per million tokens, when the catalog prices the model. */
+  cost?: { input?: number; output?: number };
   /**
    * Declared reasoning support. `null` = model reports none (hide the effort
    * control); `undefined` = unknown (offer every level — sending an
@@ -29,12 +43,47 @@ export interface UiSession {
   updated: number;
 }
 
-export interface UiServer {
+/** One configured provider, as shown in the Providers panel. */
+export interface UiProvider {
+  id: string;
+  kind: ConnectionKind;
+  /** The id OpenCode knows it by — 'anthropic', or our slug for a local endpoint. */
+  providerID: string;
+  name: string;
+  /** Local endpoints only. */
+  url?: string;
+  flavor?: LocalFlavor;
+  /** Whether a key is stored — the key itself never reaches the webview. */
+  hasApiKey: boolean;
+  enabled: boolean;
+  /**
+   * 'ready' = can serve models; 'needs-key' = configured but unusable without
+   * one; 'offline' = a local endpoint that isn't answering; 'disabled' = parked
+   * by the user; 'unknown' = not probed yet.
+   */
+  status: 'ready' | 'needs-key' | 'offline' | 'disabled' | 'unknown';
+  /** Short explanation for the badge, when there is one. */
+  detail?: string;
+  /** How many models this provider is currently contributing to the picker. */
+  modelCount: number;
+}
+
+/** One provider from the models.dev catalog, offered in the add-provider picker. */
+export interface UiCatalogProvider {
   id: string;
   name: string;
+  /** Docs URL — "where do I get a key?". */
+  doc?: string;
+  modelCount: number;
+  /** True when the user already has this provider configured. */
+  configured: boolean;
+}
+
+/** A local inference server found by the autodetect probe. */
+export interface UiDetectedServer {
+  name: string;
   url: string;
-  /** Whether a key is stored for this server — the key itself never reaches the webview. */
-  hasApiKey: boolean;
+  flavor: LocalFlavor;
 }
 
 /** A server-provided slash command (a user/built-in command, or a skill). */
@@ -112,9 +161,12 @@ export type HostToWebview =
       agents: UiAgent[];
       cwd: string;
       serverReady: boolean;
-      lmStudioConnected: boolean;
-      /** Set when LM Studio answered 401/403 — reachable, but the request was rejected. */
-      lmStudioAuthRequired?: boolean;
+      /** Whether any provider can currently serve a model. */
+      upstreamConnected: boolean;
+      /** Set when a provider answered 401/403 — reachable, but the request was rejected. */
+      upstreamAuthRequired?: boolean;
+      /** Whether the user has any usable provider configured (drives onboarding). */
+      hasProviders: boolean;
       minContext: number;
       /** Fallback effort for models with no per-model choice stored yet. */
       defaultEffort: EffortLevel;
@@ -123,7 +175,11 @@ export type HostToWebview =
   // may clear load spinners / dismiss the picker; 'periodic' = background
   // refresh that must not touch in-flight UI state. Absent = 'action'.
   | { type: 'models'; models: UiModel[]; currentModel: string | null; reason?: 'action' | 'periodic' }
-  | { type: 'servers'; servers: UiServer[]; activeId: string; connected: boolean }
+  | { type: 'providers'; providers: UiProvider[]; connected: boolean }
+  // Reply to searchCatalog: the matching page of the models.dev provider list.
+  | { type: 'catalog'; query: string; providers: UiCatalogProvider[] }
+  // Reply to detectLocalProviders: local servers that answered a probe.
+  | { type: 'detectedLocal'; servers: UiDetectedServer[] }
   | { type: 'sessions'; sessions: UiSession[]; currentSessionID: string | null }
   | { type: 'sessionLoaded'; sessionID: string; title: string; messages: MessageWithParts[] }
   | { type: 'cleared' }
@@ -195,13 +251,17 @@ export type WebviewToHost =
   | { type: 'refreshModels' }
   // The model picker opened/closed — the host fast-polls the list while open.
   | { type: 'modelMenu'; open: boolean }
-  | { type: 'listServers' }
-  | { type: 'addServer'; name: string; url: string; apiKey?: string }
+  | { type: 'listProviders' }
+  // Page the add-provider picker; '' returns the featured head.
+  | { type: 'searchCatalog'; query?: string }
+  | { type: 'addProvider'; providerID: string; name: string; apiKey?: string }
+  | { type: 'addLocalProvider'; name: string; url: string; apiKey?: string; flavor?: LocalFlavor }
   // apiKey is a tri-state edit: undefined keeps the stored key, null removes it,
   // a non-blank string replaces it.
-  | { type: 'updateServer'; id: string; name: string; url: string; apiKey?: string | null }
-  | { type: 'removeServer'; id: string }
-  | { type: 'switchServer'; id: string }
+  | { type: 'updateProvider'; id: string; name?: string; url?: string; apiKey?: string | null }
+  | { type: 'removeProvider'; id: string }
+  | { type: 'setProviderEnabled'; id: string; enabled: boolean }
+  | { type: 'detectLocalProviders' }
   | { type: 'selectAgent'; agent: string }
   | { type: 'requestAgents' }
   /** Scaffold a new agent definition on disk and open it for editing. */

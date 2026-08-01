@@ -4,27 +4,73 @@
  * by unit tests.
  *
  * Two failure modes drive everything:
- *   1. LM Studio itself is unreachable (show the offline banner, wait for it).
- *   2. LM Studio is up but the OpenCode server died / we lost our client
- *      (silently restart + reconnect, with backoff so we don't hammer it).
+ *   1. No provider can serve a model (show the offline banner, wait for one).
+ *   2. A provider is available but the OpenCode server died / we lost our
+ *      client (silently restart + reconnect, with backoff so we don't hammer
+ *      it).
  *
- * A third state sits between them: the probe *timed out*. A saturated server
+ * A third state sits between them: a probe *timed out*. A saturated server
  * (mid-generation) answers slowly but isn't gone, so timeouts only flip us
  * offline after a consecutive streak — one slow probe must never pop the
  * offline banner during a long generation (issue #7).
  */
 
-/** Result of one reachability probe against LM Studio. */
+/** Result of one reachability probe against a local endpoint. */
 export type ProbeStatus = 'ok' | 'auth-required' | 'timeout' | 'unreachable';
 
+export interface UpstreamInputs {
+  /** One probe result per enabled local endpoint (empty when there are none). */
+  probes: ProbeStatus[];
+  /** Enabled catalog providers that have a key stored. */
+  keyedProviders: number;
+  /** Whether the builtin zero-config provider is enabled. */
+  builtinEnabled: boolean;
+}
+
+/**
+ * Collapse every provider's state into the single upstream verdict the health
+ * loop reasons about.
+ *
+ * The asymmetry here is deliberate. A cloud provider with a key stored, and the
+ * builtin, are *always* considered available: they are reached through the
+ * OpenCode server, and probing them would mean spending the user's money (or
+ * their rate limit) on a liveness check every 30 seconds. Their failures
+ * surface where they belong — on the request that fails, with the provider's
+ * own error message.
+ *
+ * So the offline banner means "nothing at all can serve a model", not "one of
+ * your servers is down". A dead LM Studio while an Anthropic key is configured
+ * is not an offline state; the picker marks that one endpoint offline and the
+ * chat keeps working. With nothing but local endpoints, this reduces exactly to
+ * the old single-server behavior.
+ */
+export function aggregateUpstream(i: UpstreamInputs): ProbeStatus {
+  if (i.builtinEnabled || i.keyedProviders > 0) {
+    return 'ok';
+  }
+  if (!i.probes.length) {
+    return 'unreachable'; // nothing configured at all
+  }
+  if (i.probes.includes('ok')) {
+    return 'ok';
+  }
+  // Nothing is serving. Report the most actionable reason: a rejected key is a
+  // fixable mistake, a timeout may just be a busy server, and unreachable is
+  // the catch-all.
+  if (i.probes.includes('auth-required')) {
+    return 'auth-required';
+  }
+  return i.probes.includes('timeout') ? 'timeout' : 'unreachable';
+}
+
 export interface HealthInputs {
-  /** What the LM Studio probe returned this tick. */
+  /** The aggregate upstream verdict this tick (see aggregateUpstream). */
   upstream: ProbeStatus;
   /** Consecutive 'timeout' probes, including this one when it timed out. */
   timeoutStreak: number;
   /** Timeouts tolerated while connected before we believe the server is gone. */
   offlineAfterTimeouts: number;
-  /** Whether the bridge currently considers LM Studio connected. */
+  /** Whether the bridge currently considers a provider available. */
   connected: boolean;
   /** OpenCode server process alive AND we hold a client for it. */
   serverHealthy: boolean;
@@ -61,7 +107,7 @@ export function decideHealthAction(i: HealthInputs): HealthAction {
     // 'auth-required' (it answered but rejected us) both flip immediately.
     return i.connected ? 'go-offline' : 'none';
   }
-  // LM Studio is reachable.
+  // Something upstream can serve a model.
   if (!i.connected || !i.serverHealthy) {
     return i.now >= i.nextReconnectAt ? 'reconnect' : 'none';
   }

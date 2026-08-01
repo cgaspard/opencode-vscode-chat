@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { getConfig } from '../config';
-import { ServerRegistry } from '../connection';
 import { commandTakesArgs } from '../core/commands';
 import { type AgentInfo, delegatableAgents, pickableAgents, resolveAgent } from '../core/agents';
 import { clampContext } from '../core/context';
@@ -24,19 +23,31 @@ import {
   parseRevisionVerdict,
 } from '../core/goal';
 import { humanizeError, isConnectionError } from '../core/errors';
-import { pickModel } from '../core/models';
+import { aggregateUpstream, type ProbeStatus } from '../core/health';
+import {
+  LOCAL_PROBE_TARGETS,
+  formatModelRef,
+  isUsable,
+  parseModelRef,
+  pickModelRef,
+  searchCatalog,
+  unusableReason,
+  type ProviderConnection,
+} from '../core/providers';
 import { ConnectResult, SelfHealer } from '../core/reconnect';
 import { selectionLabel } from '../core/selection';
-import { resolveApiKeyEdit } from '../core/servers';
 import { emptySessionCandidates } from '../core/sessions';
 import { classifySkills } from '../core/skills';
 import { deriveTitle } from '../core/title';
-import { LMStudioClient } from '../lmstudio/client';
+import { detectFlavor, type LocalModel } from '../local/client';
+import { syncEndpointsFromRegistry, type LocalEndpoints } from '../local/endpoints';
 import { log, logError } from '../logger';
 import { discoverMcpServers } from '../mcp/discovery';
 import { OpencodeClient } from '../opencode/client';
 import { OpencodeAgent, OpencodeEvent, PromptBody } from '../opencode/protocol';
 import { Disposable, OpencodeServerManager } from '../opencode/serverManager';
+import type { ProviderCatalog } from '../providers/catalog';
+import type { ProviderRegistry } from '../providers/registry';
 import {
   HostToWebview,
   UiAgent,
@@ -45,6 +56,7 @@ import {
   UiImage,
   UiMcpServer,
   UiModel,
+  UiProvider,
   UiSession,
   UiSkill,
   WebviewToHost,
@@ -52,9 +64,9 @@ import {
 
 /**
  * Health poll cadence while disconnected (ms). Kept fast so a restarted
- * LM Studio is picked up promptly; the *connected* cadence is the configurable
+ * local server is picked up promptly; the *connected* cadence is the configurable
  * `opencodeChat.healthCheckSeconds` (default 30s) — issue #7: a healthy idle
- * panel shouldn't flood LM Studio's developer log with model queries.
+ * panel shouldn't flood a local server's developer log with model queries.
  */
 const OFFLINE_HEALTH_INTERVAL_MS = 5000;
 /** Refresh the model list every N health ticks while connected. */
@@ -62,7 +74,7 @@ const REFRESH_EVERY_TICKS = 3;
 /** Fast model-list refresh cadence while the model picker is open (ms). */
 const PICKER_REFRESH_MS = 4000;
 /**
- * Consecutive probe timeouts before we believe LM Studio is gone. A single
+ * Consecutive probe timeouts before we believe an endpoint is gone. A single
  * slow probe (server saturated mid-generation) must not pop the offline
  * banner; a refused connection still flips immediately.
  */
@@ -82,8 +94,12 @@ let sessionRestoreClaimed = false;
 export interface BridgeDeps {
   context: vscode.ExtensionContext;
   server: OpencodeServerManager;
-  lmStudio: LMStudioClient;
-  servers: ServerRegistry;
+  /** The user's configured providers (cloud keys + local endpoints). */
+  registry: ProviderRegistry;
+  /** Live clients for the local endpoints among them. */
+  endpoints: LocalEndpoints;
+  /** The models.dev provider list, for the add-provider picker. */
+  catalog: ProviderCatalog;
 }
 
 /**
@@ -142,22 +158,21 @@ export class ChatBridge {
   private visible = true;
   /** JSON of the last 'models' payload posted — suppresses no-op refreshes. */
   private lastPostedModelsJson = '';
+  /** Last probe result per local connection id, for the provider list's badges. */
+  private lastProbes = new Map<string, ProbeStatus>();
   private titleSink: ((t: string) => void) | undefined;
   private lastModels: UiModel[] = [];
   private serverExitSub: Disposable | undefined;
   /** Pure self-heal policy (reconnect timing, backoff, reload-after-reconnect). */
   private readonly healer: SelfHealer = new SelfHealer(
     {
-      // Share one probe across all panels' ticks (they use this same client):
+      // Share one probe across all panels' ticks (they use the same clients):
       // a result younger than ~80% of the cadence IN EFFECT is fresh enough to
       // reuse — while disconnected that cadence is the fast 5s one, so a
-      // restarted LM Studio really is noticed within ~5s. While disconnected
-      // the probe is also auth-aware (the greeting answers 200 even to a
-      // rejected key, which would otherwise spin doInit in a reconnect loop).
-      probeUpstream: () => {
-        const cadence = this.connected ? this.healthIntervalMs() : OFFLINE_HEALTH_INTERVAL_MS;
-        return this.deps.lmStudio.probeHealth(Math.floor(cadence * 0.8), !this.connected);
-      },
+      // restarted local server really is noticed within ~5s. While disconnected
+      // the probe is also auth-aware (LM Studio's greeting answers 200 even to
+      // a rejected key, which would otherwise spin doInit in a reconnect loop).
+      probeUpstream: () => this.probeUpstream(),
       serverHealthy: () => this.deps.server.isRunning && !!this.client,
       isConnected: () => this.connected,
       goOffline: () => this.markOffline(),
@@ -211,6 +226,28 @@ export class ChatBridge {
   /** The connected-state poll cadence (ms), from user settings. */
   private healthIntervalMs(): number {
     return getConfig().healthCheckSeconds * 1000;
+  }
+
+  /**
+   * One upstream verdict for the whole provider set: probe the local endpoints
+   * (cheaply, sharing results across panels) and let `aggregateUpstream` fold
+   * in the cloud providers, which are available whenever a key is stored and
+   * are never probed — a liveness check against a metered API would bill the
+   * user to learn something the next real request tells us for free.
+   */
+  private async probeUpstream(): Promise<ProbeStatus> {
+    const cadence = this.connected ? this.healthIntervalMs() : OFFLINE_HEALTH_INTERVAL_MS;
+    const connections = this.deps.registry.enabled();
+    const probes = await this.deps.endpoints.probeAll(
+      Math.floor(cadence * 0.8),
+      !this.connected,
+    );
+    this.lastProbes = probes;
+    return aggregateUpstream({
+      probes: [...probes.values()],
+      keyedProviders: connections.filter((c) => c.kind === 'catalog' && c.hasApiKey).length,
+      builtinEnabled: connections.some((c) => c.kind === 'builtin'),
+    });
   }
 
   /**
@@ -278,15 +315,37 @@ export class ChatBridge {
     }
   }
 
-  /** LM Studio went away — keep the live OpenCode server, just show the banner. */
+  /** Nothing upstream can serve — keep the live OpenCode server, just show the banner. */
   private markOffline(): void {
     this.connected = false;
-    this.postServers(false);
+    void this.postProviders(false);
     this.post({
       type: 'status',
-      text: 'Lost connection to LM Studio — reconnecting…',
+      text: 'Lost connection to every provider — reconnecting…',
       kind: 'warn',
     });
+  }
+
+  /**
+   * What to tell the user when nothing can serve a model. The distinction that
+   * matters is whether they have configured anything at all — "add a provider"
+   * and "your provider is down" are different problems with different fixes.
+   */
+  private offlineReason(upstream: ProbeStatus, usable: ProviderConnection[]): string {
+    if (!usable.length) {
+      return this.deps.registry.list().length > 1
+        ? 'No usable provider — add an API key or enable one under Providers'
+        : 'Add a provider to get started';
+    }
+    if (upstream === 'auth-required') {
+      return 'A provider rejected the stored API key — update it under Providers';
+    }
+    const offline = usable
+      .filter((c) => c.kind === 'local' && this.lastProbes.get(c.id) !== 'ok')
+      .map((c) => c.name);
+    return offline.length
+      ? `Can't reach ${offline.join(', ')}`
+      : 'No provider is responding — retrying…';
   }
 
   /** The shared OpenCode server crashed: drop our stale client + stream, reconnect. */
@@ -315,7 +374,7 @@ export class ChatBridge {
     }
   }
 
-  /** True when LM Studio is reachable and we have a live OpenCode client. */
+  /** True when a provider is available and we have a live OpenCode client. */
   private isLive(): boolean {
     return this.connected && !!this.client && this.deps.server.isRunning;
   }
@@ -323,7 +382,7 @@ export class ChatBridge {
   /**
    * Re-establish the connection after a transient failure. If the OpenCode
    * process is gone we fully re-init (which respawns it); otherwise we just
-   * re-verify LM Studio and reuse the running server. The healer reloads models
+   * re-verify the providers and reuse the running server. The healer reloads models
    * on success. Returns whether we are live afterwards.
    */
   private async reconnect(): Promise<boolean> {
@@ -449,6 +508,8 @@ export class ChatBridge {
           );
           break;
         case 'selectModel':
+          // msg.modelID is a provider-qualified ref ("anthropic/claude-sonnet-4-6"),
+          // which is what makes the same model id under two providers distinct.
           this.currentModel = msg.modelID;
           await this.deps.context.workspaceState.update('opencodeChat.model', msg.modelID);
           break;
@@ -467,40 +528,41 @@ export class ChatBridge {
         case 'modelMenu':
           this.setModelMenuOpen(msg.open);
           break;
-        case 'listServers':
-          this.postServers(this.connected);
+        case 'listProviders':
+          await this.postProviders(this.connected);
           break;
-        case 'addServer':
-          await this.deps.servers.add(msg.name, msg.url, msg.apiKey);
-          this.postServers(this.connected);
+        case 'searchCatalog':
+          await this.sendCatalog(msg.query ?? '');
           break;
-        case 'updateServer': {
-          const before = this.deps.servers.list().find((s) => s.id === msg.id);
-          await this.deps.servers.update(msg.id, msg.name, msg.url, msg.apiKey);
-          const after = this.deps.servers.list().find((s) => s.id === msg.id);
-          // A rename (or no-op Save) must not tear down a live session — only
-          // reconnect when something the connection depends on changed.
-          const connectionChanged =
-            !!before && !!after && (before.url !== after.url || resolveApiKeyEdit(msg.apiKey).kind !== 'keep');
-          if (this.deps.servers.active().id === msg.id && connectionChanged) {
-            await this.switchServer(msg.id);
-          } else {
-            this.postServers(this.connected);
-          }
+        case 'addProvider':
+          await this.deps.registry.addCatalog(msg.providerID, msg.name, msg.apiKey);
+          await this.applyProviderChange();
           break;
-        }
-        case 'removeServer': {
-          const wasActive = this.deps.servers.active().id === msg.id;
-          await this.deps.servers.remove(msg.id);
-          if (wasActive) {
-            await this.switchServer(this.deps.servers.active().id);
-          } else {
-            this.postServers(this.connected);
-          }
+        case 'addLocalProvider':
+          await this.deps.registry.addLocal(msg.name, msg.url, {
+            apiKey: msg.apiKey,
+            flavor: msg.flavor,
+          });
+          await this.applyProviderChange();
           break;
-        }
-        case 'switchServer':
-          await this.switchServer(msg.id);
+        case 'updateProvider':
+          await this.deps.registry.update(msg.id, {
+            name: msg.name,
+            url: msg.url,
+            apiKey: msg.apiKey,
+          });
+          await this.applyProviderChange();
+          break;
+        case 'removeProvider':
+          await this.deps.registry.remove(msg.id);
+          await this.applyProviderChange();
+          break;
+        case 'setProviderEnabled':
+          await this.deps.registry.setDisabled(msg.id, !msg.enabled);
+          await this.applyProviderChange();
+          break;
+        case 'detectLocalProviders':
+          await this.detectLocalProviders();
           break;
         case 'selectAgent':
           this.agent = msg.agent;
@@ -611,7 +673,7 @@ export class ChatBridge {
       }
     } catch (err) {
       logError(`handling ${msg.type}`, err);
-      this.post({ type: 'error', message: humanizeError(err, { subject: 'LM Studio' }) });
+      this.post({ type: 'error', message: humanizeError(err, { subject: this.currentProviderName() }) });
       this.post({ type: 'busy', busy: false });
     }
   }
@@ -631,23 +693,21 @@ export class ChatBridge {
 
   private async doInit(): Promise<ConnectResult> {
     const cfg = getConfig();
-    const active = this.deps.servers.active();
-    // Resolve the key BEFORE mutating the shared client: sibling panels' health
-    // ticks use it concurrently, and url+key must change as one atomic pair so
-    // a Bearer key can never be sent to a different server's host.
-    const apiKey = await this.deps.servers.apiKeyFor(active.id);
-    this.deps.lmStudio.setBaseUrl(active.url);
-    this.deps.lmStudio.setApiKey(apiKey);
+    // Reconcile the local clients with the registry BEFORE anything reads them:
+    // the server config enumerates local models through this pool, and a stale
+    // client would bake the wrong URL or a superseded key into the spawn.
+    await syncEndpointsFromRegistry(this.deps.registry, this.deps.endpoints);
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const usable = this.deps.registry.enabled().filter(isUsable);
 
-    this.post({ type: 'status', text: `Connecting to ${active.name}…` });
-    const upstream = await this.deps.lmStudio.checkConnectionStatus();
+    this.post({ type: 'status', text: 'Connecting…' });
+    const upstream = await this.probeUpstream();
     this.connected = upstream === 'ok';
-    this.postServers(this.connected);
+    await this.postProviders(this.connected);
 
-    // Offline or unauthorized: show the connection screen and wait for retry /
-    // switch / key edit. The healer applies no backoff for this — the poll
-    // recovers the moment LM Studio accepts a request again.
+    // Nothing can serve a model: show the connection screen and wait for a
+    // provider to be added, fixed or come back. The healer applies no backoff
+    // for this — the poll recovers the moment something answers.
     if (!this.connected) {
       // 'timeout' lands here too: for a user-facing connect attempt a server
       // that won't answer is indistinguishable from one that's gone.
@@ -663,19 +723,15 @@ export class ChatBridge {
         agent: this.agent,
         cwd,
         serverReady: false,
-        lmStudioConnected: false,
-        lmStudioAuthRequired: authRequired,
+        upstreamConnected: false,
+        upstreamAuthRequired: authRequired,
+        hasProviders: usable.length > 0,
         minContext: cfg.minContextLength,
         defaultEffort: cfg.defaultThinkingEffort,
         agents: [],
       });
-      const text = authRequired
-        ? active.hasApiKey
-          ? `LM Studio at ${active.url} rejected the stored API key — update it under Servers`
-          : `LM Studio at ${active.url} requires an API key — add one under Servers`
-        : `Can't reach LM Studio at ${active.url}`;
-      this.post({ type: 'status', text, kind: 'warn' });
-      log(`doInit: upstream ${upstream} for ${active.url}`);
+      this.post({ type: 'status', text: this.offlineReason(upstream, usable), kind: 'warn' });
+      log(`doInit: upstream ${upstream} across ${usable.length} usable provider(s)`);
       return 'upstream-down';
     }
 
@@ -696,7 +752,8 @@ export class ChatBridge {
         agent: this.agent,
         cwd,
         serverReady: false,
-        lmStudioConnected: true,
+        upstreamConnected: true,
+        hasProviders: usable.length > 0,
         minContext: cfg.minContextLength,
         defaultEffort: cfg.defaultThinkingEffort,
         agents: [],
@@ -710,8 +767,11 @@ export class ChatBridge {
     // The live in-session selection wins over configuration: a self-heal
     // reconnect mid-conversation must never silently switch the user's model
     // back to defaultModel. defaultModel only decides on a fresh panel.
-    this.currentModel =
-      pickModel([this.currentModel ?? '', cfg.defaultModel, stored ?? ''], models) ?? null;
+    const picked = pickModelRef(
+      [this.currentModel ?? '', cfg.defaultModel, stored ?? ''],
+      models.map((m) => ({ providerID: m.providerID, modelID: m.modelID, loaded: m.loaded })),
+    );
+    this.currentModel = picked ? formatModelRef(picked.providerID, picked.modelID) : null;
 
     this.startEventStream();
 
@@ -729,7 +789,8 @@ export class ChatBridge {
       agent: this.agent,
       cwd,
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true,
+      hasProviders: usable.length > 0,
       minContext: cfg.minContextLength,
       defaultEffort: cfg.defaultThinkingEffort,
       agents,
@@ -936,7 +997,7 @@ export class ChatBridge {
           '# primary = you pick it in the composer; subagent = the model delegates to it; all = both',
           'mode: subagent',
           '# Optional: pin a model, restrict tools, set reasoning effort',
-          '# model: lmstudio/qwen/qwen3.6-27b',
+          '# model: anthropic/claude-sonnet-4-6',
           '# variant: high',
           '# tools:',
           '#   bash: false',
@@ -996,16 +1057,14 @@ export class ChatBridge {
       throw new Error('OpenCode server is not running.');
     }
     if (!this.currentModel) {
-      throw new Error('No LM Studio model selected.');
+      throw new Error('No model selected.');
     }
     await this.ensureSession();
     const cfg = getConfig();
     if (cfg.autoEnsureContext) {
-      await this.deps.lmStudio
-        .ensureContext(this.currentModel, cfg.minContextLength, cfg.gpuOffload, (m) =>
-          this.post({ type: 'status', text: m }),
-        )
-        .catch((err) => logError('ensureContext for command', err));
+      await this.ensureModelContext(this.currentModel, cfg.minContextLength, cfg.gpuOffload, (m) =>
+        this.post({ type: 'status', text: m }),
+      ).catch((err) => logError('ensureContext for command', err));
       this.post({ type: 'status', text: '' });
     }
     this.post({ type: 'busy', busy: true });
@@ -1013,7 +1072,7 @@ export class ChatBridge {
       command,
       ...(args ? { arguments: args } : {}),
       agent: this.agent,
-      model: `lmstudio/${this.currentModel}`,
+      model: this.currentModel,
     });
     // A command counts as the first turn of a fresh chat — refresh history so it
     // shows up (and gets its session title from the run).
@@ -1087,7 +1146,7 @@ export class ChatBridge {
 
   /** The user-facing identity override (shared by sends + goal continues). */
   private identitySystem(): string {
-    return 'You are "OpenCode Chat", an agentic coding assistant running on the user\'s machine against their local LM Studio models. If asked your name or what you are, identify as "OpenCode Chat". Never identify yourself as "opencode".';
+    return 'You are "OpenCode Chat", an agentic coding assistant running in the user\'s editor against the model provider they chose. If asked your name or what you are, identify as "OpenCode Chat". Never identify yourself as "opencode".';
   }
 
   /** The goal directive appended to the agent's system prompt while active. */
@@ -1199,7 +1258,7 @@ export class ChatBridge {
       const level = resolveLevel('off', reasoning);
       const nudge = fallbackPromptText(level, reasoning);
       await client.promptAsync(session.id, {
-        model: { providerID: 'lmstudio', modelID: this.currentModel! },
+        model: this.modelSelection()!,
         system: nudge ? `${system}\n\n${nudge}` : system,
         ...(variantForLevel(level) ? { variant: variantForLevel(level) } : {}),
         parts: [{ type: 'text', text: prompt }],
@@ -1297,38 +1356,164 @@ export class ChatBridge {
   private async continueGoal(objective: string, reason: string): Promise<void> {
     this.post({ type: 'busy', busy: true });
     await this.sendPrompt({
-      model: { providerID: 'lmstudio', modelID: this.currentModel! },
+      model: this.modelSelection()!,
       agent: this.agent,
       system: this.identitySystem() + this.goalSystemSuffix(),
       parts: [{ type: 'text', text: buildContinuePrompt(objective, reason) }],
     });
   }
 
-  private postServers(connected: boolean): void {
+  /**
+   * The selected model split into what the wire wants. Every prompt, summarize
+   * and command carries this; `null` only when nothing is selected, which the
+   * callers check first.
+   */
+  private modelSelection(): { providerID: string; modelID: string } | null {
+    const parsed = parseModelRef(this.currentModel);
+    if (!parsed?.providerID) {
+      return null;
+    }
+    return { providerID: parsed.providerID, modelID: parsed.modelID };
+  }
+
+  /** Display name of the selected model's provider, for error messages. */
+  private currentProviderName(): string {
+    const sel = this.modelSelection();
+    const conn = sel ? this.deps.registry.byProviderId(sel.providerID) : undefined;
+    return conn?.name ?? 'the provider';
+  }
+
+  /** The local client that owns a model ref, or undefined for a cloud model. */
+  private clientForRef(ref: string | null): ReturnType<LocalEndpoints['get']> {
+    const parsed = parseModelRef(ref);
+    if (!parsed?.providerID) {
+      return undefined;
+    }
+    const conn = this.deps.registry.byProviderId(parsed.providerID);
+    return conn && conn.kind === 'local' ? this.deps.endpoints.get(conn.id) : undefined;
+  }
+
+  /**
+   * Ensure a model has an adequate context window before prompting. Only LM
+   * Studio can do this (it is the one flavor exposing a load lifecycle), and
+   * only for its own models — for a cloud model the context window is whatever
+   * the provider says it is, so this is a no-op rather than an error.
+   */
+  private async ensureModelContext(
+    ref: string,
+    minContext: number,
+    gpu: string,
+    onProgress?: (msg: string) => void,
+  ): Promise<{ reloaded: boolean; context?: number; note?: string }> {
+    const client = this.clientForRef(ref);
+    if (!client?.supportsLifecycle) {
+      return { reloaded: false };
+    }
+    const parsed = parseModelRef(ref);
+    return client.ensureContext(parsed!.modelID, minContext, gpu, onProgress);
+  }
+
+  /** Push the provider list (with live status badges) to the webview. */
+  private async postProviders(connected: boolean): Promise<void> {
     this.connected = connected;
     if (!connected) {
       // Some flips to offline happen outside a health tick (a failed send's
-      // reconnect, switching to a dead server) — make the next 5s metronome
+      // reconnect, removing the last provider) — make the next 5s metronome
       // tick probe immediately instead of waiting out the connected cadence.
       this.nextProbeDueAt = 0;
     }
+    const connections = this.deps.registry.list();
+    const providers: UiProvider[] = connections.map((c) => ({
+      id: c.id,
+      kind: c.kind,
+      providerID: c.providerID,
+      name: c.name,
+      url: c.baseUrl,
+      flavor: c.flavor,
+      hasApiKey: !!c.hasApiKey,
+      enabled: !c.disabled,
+      status: this.providerStatus(c),
+      detail: unusableReason(c) ?? undefined,
+      modelCount: this.lastModels.filter((m) => m.providerID === c.providerID).length,
+    }));
+    this.post({ type: 'providers', providers, connected });
+  }
+
+  /**
+   * A connection's live state for its badge. Only local endpoints have a probed
+   * status; a cloud provider is 'ready' once it holds a key, because we never
+   * spend a request to find out (see aggregateUpstream).
+   */
+  private providerStatus(conn: ProviderConnection): UiProvider['status'] {
+    if (conn.disabled) {
+      return 'disabled';
+    }
+    if (conn.kind !== 'local') {
+      return isUsable(conn) ? 'ready' : 'needs-key';
+    }
+    const probe = this.lastProbes.get(conn.id);
+    if (probe === 'ok') {
+      return 'ready';
+    }
+    if (probe === 'auth-required') {
+      return 'needs-key';
+    }
+    return probe ? 'offline' : 'unknown';
+  }
+
+  /**
+   * Apply a change to the provider set. The OpenCode server's config is baked
+   * at spawn, so any change to what it can reach means a respawn — but the
+   * conversation is not the server's, so unlike the old server switch this
+   * keeps the current session and transcript intact.
+   */
+  private async applyProviderChange(): Promise<void> {
+    await syncEndpointsFromRegistry(this.deps.registry, this.deps.endpoints);
+    this.healer.allowImmediate(); // a deliberate change shouldn't wait on backoff
+    this.teardownConnection(true);
+    await this.init();
+    await this.postProviders(this.connected);
+  }
+
+  /** Send the add-provider picker its (searchable) catalog page. */
+  private async sendCatalog(query: string): Promise<void> {
+    const entries = await this.deps.catalog.load();
+    const configured = new Set(this.deps.registry.list().map((c) => c.providerID));
     this.post({
-      type: 'servers',
-      servers: this.deps.servers.list().map((s) => ({ id: s.id, name: s.name, url: s.url, hasApiKey: !!s.hasApiKey })),
-      activeId: this.deps.servers.active().id,
-      connected,
+      type: 'catalog',
+      query,
+      providers: searchCatalog(entries, query).map((e) => ({
+        id: e.id,
+        name: e.name,
+        doc: e.doc,
+        modelCount: e.modelCount,
+        configured: configured.has(e.id),
+      })),
     });
   }
 
-  /** Switch the active LM Studio server: tear down OpenCode and re-initialize. */
-  private async switchServer(id: string): Promise<void> {
-    await this.deps.servers.setActive(id);
-    this.currentSessionID = null;
-    this.persistSession(null);
-    this.healer.allowImmediate(); // a deliberate switch shouldn't wait on backoff
-    this.teardownConnection(true);
-    this.post({ type: 'cleared' });
-    await this.init();
+  /**
+   * Probe the well-known local inference ports and report which answered, so
+   * someone already running LM Studio or Ollama can add it with one click
+   * instead of typing a URL. Purely loopback; nothing is added automatically.
+   */
+  private async detectLocalProviders(): Promise<void> {
+    const known = new Set(
+      this.deps.registry
+        .list()
+        .filter((c) => c.kind === 'local')
+        .map((c) => c.baseUrl),
+    );
+    const found = await Promise.all(
+      LOCAL_PROBE_TARGETS.map(async (t) => {
+        if (known.has(t.url)) {
+          return null; // already configured — don't offer a duplicate
+        }
+        const flavor = await detectFlavor(t.url);
+        return flavor ? { name: t.name, url: t.url, flavor } : null;
+      }),
+    );
+    this.post({ type: 'detectedLocal', servers: found.filter((f) => !!f) });
   }
 
   /**
@@ -1378,7 +1563,7 @@ export class ChatBridge {
   private async handleLoadModel(modelID: string): Promise<void> {
     const cfg = getConfig();
     this.post({ type: 'status', text: `Loading ${modelID}…` });
-    const result = await this.deps.lmStudio.ensureContext(
+    const result = await this.ensureModelContext(
       modelID,
       cfg.minContextLength,
       cfg.gpuOffload,
@@ -1419,7 +1604,7 @@ export class ChatBridge {
   private async handleUnloadModel(modelID: string): Promise<void> {
     this.post({ type: 'status', text: `Unloading ${modelID}…` });
     try {
-      await this.deps.lmStudio.unloadModel(modelID);
+      await this.clientForRef(modelID)?.unloadModel(modelID.slice(modelID.indexOf('/') + 1));
     } catch (err) {
       logError(`unload ${modelID}`, err);
     }
@@ -1427,22 +1612,108 @@ export class ChatBridge {
     await this.refreshModelsToWebview();
   }
 
+  /**
+   * The model list, assembled from two sources.
+   *
+   * `GET /config/providers` is the base and the authority: it returns exactly
+   * the providers the running server accepted and, for each, the models it will
+   * take — with names, context limits, capabilities, prices and the model's own
+   * reasoning `variants`. That covers all 176 catalog providers with no
+   * per-provider code, and it covers our local endpoints too, since we declared
+   * them into the same config.
+   *
+   * Local endpoints then get a second pass from their own client, which knows
+   * things no catalog can: whether a model is loaded in memory right now, the
+   * context window it was loaded with, its quantization and runtime format.
+   * That metadata drives the load/eject controls, so it is merged on top.
+   */
   private async loadModels(): Promise<UiModel[]> {
-    const list = await this.deps.lmStudio.listModels();
-    this.lastModels = list.map((m) => ({
-      id: m.id,
-      name: m.displayName,
-      loaded: m.state === 'loaded',
-      contextLength: m.loadedContextLength,
-      maxContextLength: m.maxContextLength,
-      toolUse: m.toolUse,
-      vision: m.vision,
-      publisher: m.publisher,
-      quantization: m.quantization,
-      format: m.format,
-      reasoning: m.reasoning,
-    }));
-    return this.lastModels;
+    if (!this.client) {
+      return [];
+    }
+    let providers: Awaited<ReturnType<OpencodeClient['listProviders']>>;
+    try {
+      providers = await this.client.listProviders();
+    } catch (err) {
+      logError('GET /config/providers failed', err);
+      return this.lastModels;
+    }
+    // Local metadata, keyed by "<providerID>/<modelID>" so the merge is a lookup.
+    const localByRef = new Map<string, LocalModel>();
+    const localConnByProvider = new Map<string, ProviderConnection>();
+    for (const conn of this.deps.registry.enabled()) {
+      if (conn.kind === 'local') {
+        localConnByProvider.set(conn.providerID, conn);
+      }
+    }
+    if (localConnByProvider.size) {
+      const byConn = await this.deps.endpoints.listAllModels();
+      for (const [connId, models] of byConn) {
+        const conn = this.deps.registry.byId(connId);
+        if (!conn) {
+          continue;
+        }
+        for (const m of models) {
+          localByRef.set(formatModelRef(conn.providerID, m.id), m);
+        }
+      }
+    }
+
+    const known = new Map(this.deps.registry.list().map((c) => [c.providerID, c]));
+    const out: UiModel[] = [];
+    for (const provider of providers.providers) {
+      const conn = known.get(provider.id);
+      // A provider the server knows but the registry does not is one the user
+      // removed a moment ago (or one OpenCode picked up from the environment) —
+      // either way it is not ours to offer.
+      if (!conn || conn.disabled) {
+        continue;
+      }
+      for (const [modelID, info] of Object.entries(provider.models ?? {})) {
+        const ref = formatModelRef(provider.id, modelID);
+        const local = localByRef.get(ref);
+        const caps = info.capabilities;
+        const variants = Object.keys(info.variants ?? {});
+        out.push({
+          id: ref,
+          providerID: provider.id,
+          providerName: conn.name || provider.name,
+          providerKind: conn.kind,
+          modelID,
+          name: local?.displayName ?? info.name ?? modelID,
+          loaded: local ? local.state === 'loaded' : undefined,
+          lifecycle: conn.kind === 'local' && conn.flavor === 'lmstudio',
+          contextLength: local?.loadedContextLength,
+          maxContextLength: local?.maxContextLength ?? info.limit?.context,
+          toolUse: local?.toolUse ?? caps?.toolcall,
+          vision: local?.vision ?? caps?.input?.image ?? caps?.attachment,
+          publisher: local?.publisher,
+          quantization: local?.quantization,
+          format: local?.format,
+          cost: info.cost?.input !== undefined || info.cost?.output !== undefined
+            ? { input: info.cost?.input, output: info.cost?.output }
+            : undefined,
+          // Local models use the variant table WE declared, so their granularity
+          // comes from LM Studio's capability report. Catalog models publish
+          // their own variants, which are the exact names they accept.
+          reasoning: local
+            ? local.reasoning
+            : caps?.reasoning
+              ? { allowedOptions: variants, declared: true }
+              : null,
+        });
+      }
+    }
+    // Group by provider (registry order), models alphabetical within each, so
+    // the picker is stable across refreshes rather than following server order.
+    const order = new Map([...known.keys()].map((id, i) => [id, i]));
+    out.sort(
+      (a, b) =>
+        (order.get(a.providerID) ?? 99) - (order.get(b.providerID) ?? 99) ||
+        a.name.localeCompare(b.name),
+    );
+    this.lastModels = out;
+    return out;
   }
 
   /**
@@ -1632,7 +1903,8 @@ export class ChatBridge {
     this.post({ type: 'status', text: 'Compacting conversation…' });
     let summary = '';
     try {
-      await this.client.summarize(this.currentSessionID, 'lmstudio', this.currentModel);
+      const sel = this.modelSelection();
+      await this.client.summarize(this.currentSessionID, sel!.providerID, sel!.modelID);
       summary = await this.latestSummary(this.currentSessionID);
     } finally {
       // Always release the input, even if summarize threw (onMessage's catch
@@ -1741,7 +2013,7 @@ export class ChatBridge {
       throw new Error('OpenCode server is not running.');
     }
     if (!this.currentModel) {
-      throw new Error('No LM Studio model selected.');
+      throw new Error('No model selected.');
     }
     // Lazily create the server session on the first message of a fresh chat, so
     // an untouched "New chat" never exists server-side (and never shows in
@@ -1750,7 +2022,7 @@ export class ChatBridge {
     const cfg = getConfig();
 
     if (cfg.autoEnsureContext) {
-      const result = await this.deps.lmStudio.ensureContext(
+      const result = await this.ensureModelContext(
         this.currentModel,
         cfg.minContextLength,
         cfg.gpuOffload,
@@ -1770,7 +2042,7 @@ export class ChatBridge {
     let system = this.identitySystem() + this.goalSystemSuffix();
 
     // Reasoning effort. The real lever is the `variant` on the prompt body,
-    // which OpenCode resolves to `reasoning_effort` on the LM Studio request —
+    // which OpenCode resolves to the provider's own reasoning field —
     // engine-level, and it doesn't pollute the user's message the way the old
     // `/no_think` suffix did. Clamp to what this model actually declares, so a
     // level carried over from a different model can't be sent blindly.
@@ -1826,7 +2098,7 @@ export class ChatBridge {
 
     this.post({ type: 'busy', busy: true });
     await this.sendPrompt({
-      model: { providerID: 'lmstudio', modelID: this.currentModel },
+      model: this.modelSelection()!,
       agent: this.agent,
       ...(system ? { system } : {}),
       ...(variant ? { variant } : {}),
@@ -1869,7 +2141,7 @@ export class ChatBridge {
         return;
       }
       throw new Error(
-        'Lost connection to LM Studio. It looks offline — start it and try again; I’ll keep reconnecting in the background.',
+        'Lost the connection to your model provider. If it is a local server, start it and try again; I’ll keep reconnecting in the background.',
       );
     }
   }
