@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to OpenCode Agent. Generated from `releasenotes/*.yaml`
+All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
 ## v0.2.0
