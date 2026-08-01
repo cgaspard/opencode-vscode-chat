@@ -1,18 +1,27 @@
 # Screenshots
 
-Drop PNGs here with these exact filenames — the main `README.md` references them:
+Referenced by the main `README.md` via absolute `raw.githubusercontent.com`
+URLs — the Marketplace serves the README from its own domain and will not
+resolve repo-relative image paths. They are committed here but excluded from
+the `.vsix` (see `.vscodeignore`), so they cost nothing at install time.
 
-| File | What to capture |
+| File | What it shows |
 | --- | --- |
-| `panel.png` | **Hero shot.** The OpenCode Chat panel docked in the secondary side bar next to Claude Code / Codex, mid-conversation. This is the one that sells it. |
-| `chat.png` | A streaming/finished answer showing the **agent timeline** — Thinking step, a couple of tool steps (read/write/bash), the response, and the **context meter** above the composer. |
-| `models.png` | The **model menu** open (click the model name in the composer) showing loaded ● / idle ○ models with **Load** / **Eject** buttons. |
-| `history.png` | The **session history** overlay (clock icon) with a few auto-titled sessions. |
-| `servers.png` | The **server switcher** popover (or the offline connection banner) — shows the multi-server / "specify another server" feature. |
+| `panel.png` | **Hero shot.** The agent working a task end to end — prompt, tool cards, result. |
+| `providers.png` | The providers panel: every configured provider with its enable switch, above the single search that adds either a keyed provider or a local server. |
+| `models.png` | The model picker with provider groups collapsed except the current model's, showing context window, price and capability badges. |
 
-## Tips for clean shots
+## Regenerating
 
-- Use a real repo so the tool steps look meaningful.
-- Trim to just the panel (not the whole VS Code window) for the side images; the hero (`panel.png`) can include the neighboring tabs for context.
-- ~2x (Retina) PNGs look crisp on the Marketplace. Keep each under ~500 KB if you can.
-- Marketplace serves these from the Git repo via the `repository` field, so they must be committed.
+These were captured at 2x from the real compiled webview (`dist/webview/main.js`
+plus `media/styles.css`) driven in a headless browser with representative
+provider/model data — the UI is exactly what ships; the conversation and the
+provider list are examples.
+
+If you re-shoot them from a live session instead, keep the filenames and the
+rough aspect ratio so the README table stays balanced. Either way:
+
+- Trim to the panel, not the whole VS Code window.
+- 2x (Retina) PNGs look crisp on the Marketplace; keep each under ~500 KB.
+- They must be committed and pushed — the Marketplace fetches them from the
+  default branch, so a listing update needs the images on `main` first.

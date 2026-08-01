@@ -10,6 +10,15 @@ Not autocomplete. This is a full agent panel: it reads and edits your files, run
 
 Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled right in.
 
+<!-- Absolute raw.githubusercontent URLs, not repo-relative paths: the
+     Marketplace serves this README from its own domain and will not resolve
+     relative images. These live in the repo but are excluded from the .vsix. -->
+<img src="https://raw.githubusercontent.com/cgaspard/opencode-vscode-chat/main/media/screenshots/panel.png" alt="The agent working through a task in the side bar, with expandable tool cards for each step" width="420" />
+
+| Every provider in one panel | One picker, grouped by provider |
+| --- | --- |
+| <img src="https://raw.githubusercontent.com/cgaspard/opencode-vscode-chat/main/media/screenshots/providers.png" alt="Providers panel showing OpenCode Zen, Anthropic, OpenRouter and a local LM Studio server, each with an enable switch, above a single search that adds either an API-key provider or a local server" width="380" /> | <img src="https://raw.githubusercontent.com/cgaspard/opencode-vscode-chat/main/media/screenshots/models.png" alt="Model picker with provider groups collapsed except the current model's, showing context window, price per million tokens and capability badges" width="380" /> |
+
 ## The agent
 
 - **Real tools** — reads files, writes edits, runs shell commands, searches your codebase. Every step shows up as a tool card you can expand.

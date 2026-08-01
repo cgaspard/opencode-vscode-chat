@@ -1922,16 +1922,41 @@ function openModelMenu(): void {
   );
   renderModelMenu();
   modelMenu.classList.remove('hidden');
-  // Anchor above the model button, opening upward.
-  const r = modelBtn.getBoundingClientRect();
+  anchorMenuAbove(modelMenu, modelBtn);
+}
+
+/**
+ * Place a popup above its control, opening upward, without letting it leave
+ * the window on any side.
+ *
+ * The vertical clamp matters because these panels can be taller than the space
+ * above their button — a short editor tab, or the providers panel with several
+ * providers configured. Overflowing upward puts the header and the search box
+ * off-screen where they cannot be reached or scrolled to, so cap the height
+ * instead and let the panel's own scroll regions absorb it.
+ */
+function anchorMenuAbove(menu: HTMLElement, anchor: HTMLElement): void {
+  const r = anchor.getBoundingClientRect();
+  // A control that has been collapsed into the (closed) ⋯ menu has no box at
+  // all. Anchor to the bottom of the window rather than computing from zeros,
+  // which would place the popup a full window-height above the top edge.
+  const anchorTop = r.height ? r.top : window.innerHeight - 8;
   const width = Math.min(380, window.innerWidth - 16);
-  let left = r.left;
+  let left = r.height ? r.left : 8;
   if (left + width > window.innerWidth - 8) {
     left = window.innerWidth - width - 8;
   }
-  modelMenu.style.left = Math.max(8, left) + 'px';
-  modelMenu.style.width = width + 'px';
-  modelMenu.style.bottom = window.innerHeight - r.top + 6 + 'px';
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.width = width + 'px';
+  const bottom = window.innerHeight - anchorTop + 6;
+  menu.style.bottom = bottom + 'px';
+  // Let the stylesheet's own cap win whenever it fits; only override when the
+  // anchor leaves less room than that.
+  menu.style.maxHeight = '';
+  const available = window.innerHeight - bottom - 8;
+  if (menu.getBoundingClientRect().height > available) {
+    menu.style.maxHeight = Math.max(120, available) + 'px';
+  }
 }
 
 function closeModelMenu(): void {
@@ -2332,15 +2357,7 @@ function openServerMenu(): void {
   }
   renderServerMenu();
   serverMenu.classList.remove('hidden');
-  const r = serverBtn.getBoundingClientRect();
-  const width = Math.min(380, window.innerWidth - 16);
-  let left = r.left;
-  if (left + width > window.innerWidth - 8) {
-    left = window.innerWidth - width - 8;
-  }
-  serverMenu.style.left = Math.max(8, left) + 'px';
-  serverMenu.style.width = width + 'px';
-  serverMenu.style.bottom = window.innerHeight - r.top + 6 + 'px';
+  anchorMenuAbove(serverMenu, serverBtn);
 }
 
 function closeServerMenu(): void {
