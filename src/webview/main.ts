@@ -99,6 +99,8 @@ interface State {
   localMatches: LocalServerOption[];
   /** Provider groups open in the model picker; reseeded on every open. */
   expandedProviders: Set<string>;
+  /** Providers whose enable/disable is in flight (the server is restarting). */
+  pendingProviders: Set<string>;
   /** Local servers the last detect probe found, offered as one-click adds. */
   detected: UiDetectedServer[];
   activeFile: { path: string; chars: number } | null;
@@ -143,6 +145,7 @@ const state: State = {
   localServers: [],
   localMatches: [],
   expandedProviders: new Set<string>(),
+  pendingProviders: new Set<string>(),
   detected: [],
   activeFile: null,
   includeActiveFile: persisted.includeActiveFile ?? true,
@@ -2021,7 +2024,7 @@ function renderServerMenu(): void {
         <span class="model-name">${escapeHtml(p.name)}</span>
         <span class="model-meta">${detail} · ${STATUS_LABEL[p.status]}${models}</span>
       </span>
-      <button class="model-action provider-toggle ${p.enabled ? 'on' : 'off'}" role="switch" aria-checked="${p.enabled}" title="${p.enabled ? `Disable ${p.name} — its models leave the picker` : `Enable ${p.name}`}"><span class="toggle-track"><span class="toggle-knob"></span></span></button>
+      <button class="model-action provider-toggle ${p.enabled ? 'on' : 'off'}${state.pendingProviders.has(p.id) ? ' pending' : ''}" role="switch" aria-checked="${p.enabled}" aria-busy="${state.pendingProviders.has(p.id)}" title="${state.pendingProviders.has(p.id) ? 'Applying — restarting the agent…' : p.enabled ? `Disable ${p.name} — its models leave the picker` : `Enable ${p.name}`}"><span class="toggle-track"><span class="toggle-knob"></span></span></button>
       ${
         // The builtin can take a key (paid Zen) but cannot be removed — it has
         // no stored settings to delete. Its remove slot is still rendered,
@@ -2036,7 +2039,18 @@ function renderServerMenu(): void {
       }`;
     (row.querySelector('.provider-toggle') as HTMLButtonElement).addEventListener('click', (e) => {
       e.stopPropagation();
-      post({ type: 'setProviderEnabled', id: p.id, enabled: !p.enabled });
+      // Flip locally before telling the host. Toggling a provider restarts the
+      // OpenCode server, so the authoritative `providers` message is seconds
+      // away — without this the switch sits in its old position that whole
+      // time and reads as a dead control. The host's reply is still the truth
+      // and will correct this if the change did not take.
+      if (state.pendingProviders.has(p.id)) {
+        return; // already in flight; a second restart would only slow it down
+      }
+      state.pendingProviders.add(p.id);
+      p.enabled = !p.enabled;
+      renderServerMenu();
+      post({ type: 'setProviderEnabled', id: p.id, enabled: p.enabled });
     });
     (row.querySelector('.server-edit') as HTMLButtonElement | null)?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3579,6 +3593,8 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       }
       break;
     case 'providers':
+      // The host has applied whatever was in flight — its view wins from here.
+      state.pendingProviders.clear();
       state.providers = msg.providers;
       state.hasProviders = msg.providers.some(
         (p) => p.enabled && (p.status === 'ready' || p.status === 'offline'),

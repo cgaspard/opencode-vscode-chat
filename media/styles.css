@@ -2207,6 +2207,23 @@ body.compacting .send-btn {
 .provider-toggle.on:hover .toggle-knob {
   background: var(--accent-fg);
 }
+/* In flight: the switch has already moved (optimistically), but the agent is
+   still restarting. Pulse so the wait reads as work rather than a dead click. */
+.provider-toggle.pending {
+  cursor: progress;
+}
+.provider-toggle.pending .toggle-track {
+  animation: toggle-pulse 1s ease-in-out infinite;
+}
+@keyframes toggle-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
 .provider-toggle:focus-visible {
   outline: 1px solid var(--vscode-focusBorder, var(--accent));
   outline-offset: 2px;
