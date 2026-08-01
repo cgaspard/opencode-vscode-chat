@@ -49,7 +49,7 @@ npx vsce ls          # the EXACT set of files that will be in the .vsix
 Confirm the list contains ONLY:
 - `package.json`, `README.md`, `LICENSE`
 - `dist/extension.js`, `dist/webview/main.js` (the bundled output)
-- curated `media/*` that the manifest references (icon, activity icon, styles, sample gif)
+- curated `media/*` that the manifest references (icon, activity icon, styles)
 
 Then assert nothing inappropriate leaks (should print "clean"):
 ```bash

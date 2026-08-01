@@ -1,16 +1,14 @@
 # OpenCode Chat
 
-**A real coding agent in VS Code — running entirely on the models you already have in LM Studio.**
+**A real coding agent in VS Code — on whichever models you bring.**
 
-Not autocomplete. This is a full agent panel: it reads and edits your files, runs shell commands, asks permission before it touches anything, works through a todo list, and keeps going until the job is done. Everything runs on your machine against [LM Studio](https://lmstudio.ai) — no cloud round-trip, no API key, no token bill, works on a plane.
+Not autocomplete. This is a full agent panel: it reads and edits your files, runs shell commands, asks permission before it touches anything, works through a todo list, and keeps going until the job is done.
 
-Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled right in. Install, pick a model, start working.
+**Bring your own models.** Paste an API key for Anthropic, OpenAI, Google, OpenRouter — or any of the 170+ providers in the [models.dev](https://models.dev) catalog — and/or point it at a local [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.com) or [vLLM](https://docs.vllm.ai) server. Configure as many as you like: they are all live at once, and switching from a local model to Claude is a model choice, not a reconnect.
 
-## Demo
+**It works before you configure anything.** OpenCode's own free *Zen* models are built in, so a fresh install can answer your first question with no key and no account.
 
-![OpenCode Chat demo](media/sample.gif)
-
----
+Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled right in.
 
 ## The agent
 
@@ -19,7 +17,7 @@ Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled ri
 - **Build or plan mode** — `build` edits your code; `plan` is strictly read-only for when you just want a strategy.
 - **Live todo list** — the agent's plan renders as a checklist that ticks off in place as it works, with a progress count.
 - **See it think** — reasoning models get collapsible *Thinking* blocks. Alt-click the thinking pill to hide them without changing how the model works.
-- **Dial the thinking** — set reasoning effort per model from the model menu, the composer pill, or `/effort`. The levels offered are the ones the model actually reports: most local reasoning models are on/off, so you get *Auto · Off · On* rather than a low/medium/high slider that would do nothing. Models with no reasoning support hide the control entirely.
+- **Dial the thinking** — set reasoning effort per model from the model menu, the composer pill, or `/effort`. The levels offered are the ones the model actually declares, so you never get a slider that does nothing.
 - **Streaming everything** — responses render as markdown with syntax-highlighted code as they arrive.
 
 ## Agents — specialists you define
@@ -41,14 +39,16 @@ Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled ri
 
 Type while the agent is working and hit Enter — your instructions get injected at its next step, so it adjusts work already in progress instead of you stopping and starting over. The stop button still stops.
 
-## Your models, your machine
+## Your models, your keys
 
-- **Live model picker** — every model in LM Studio, showing loaded ● / unloaded ○, context size, publisher, format (MLX/GGUF), and quantization, so same-named models are never ambiguous. Load or eject right from the menu.
-- **Context handled for you** — the extension reloads your model with an adequate context window via the `lms` CLI, so a 4096-token default never blows up mid-task.
+- **Add a provider in two clicks** — search the models.dev catalog, paste a key, done. No per-provider setup: the model list, context limits, capabilities and prices all come back from the provider itself.
+- **Local servers too** — LM Studio, Ollama, vLLM, or anything else speaking OpenAI-compatible `/v1`. A one-click scan finds servers already running on the usual ports.
+- **One picker, every provider** — models grouped by provider, with context window, vision/tool badges, and price per million tokens where there is one. Local models additionally show loaded ● / unloaded ○, publisher, format (MLX/GGUF) and quantization, and can be loaded or ejected right from the menu.
+- **Keys stay secret** — stored in VS Code's encrypted Secret Storage, never in a settings file, never sent back to the UI, and never inherited by the tool processes the agent spawns (they are handed to OpenCode through a 0600 file reference, not the environment).
+- **Effort that matches the model** — the reasoning levels offered are the ones each model actually declares: Anthropic's low/medium/high/max, OpenAI's medium/high/xhigh, or the honest Auto/Off/On that most local models really support. Models with no reasoning support hide the control entirely.
+- **Context handled for you** — on LM Studio, the extension reloads your model with an adequate context window, so a 4096-token default never blows up mid-task.
 - **Room to think** — the output budget scales with the context window (up to 32k), so long reasoning doesn't get chopped off mid-answer. If a response does hit the ceiling, you're told.
-- **Multiple servers** — register several LM Studio instances, local or remote, and switch between them in a click.
-- **Per-server API keys** — connect to remote instances behind authentication. Keys live in VS Code's encrypted Secret Storage: never in a settings file, never sent back to the UI, never inherited by tool processes the agent spawns.
-- **Quiet by default** — a 30-second liveness check shared across panels, paused when hidden. Your LM Studio log stays readable, and a busy server no longer flashes "offline" mid-generation.
+- **Quiet by default** — a 30-second liveness check shared across panels, paused when hidden, and only ever against your *local* servers: probing a metered API to see if it is alive would bill you to learn what the next real request tells us for free.
 
 ## Context, without the busywork
 
@@ -80,16 +80,18 @@ The panel lives in the Activity Bar (or the secondary side bar), and the compose
 
 ## Quick start
 
-1. Start LM Studio's server and load a model.
-2. Install this extension.
-3. Click the spark icon in the Activity Bar.
-4. Pick a model, type a task, hit Enter.
+1. Install this extension.
+2. Click the spark icon in the Activity Bar.
+3. Type a task and hit Enter — the built-in free models answer with nothing configured.
+4. When you want your own models, open **Providers** and either paste an API key or add a local server.
 
 ### Requirements
 
 - **VS Code** 1.104+
-- **[LM Studio](https://lmstudio.ai)** running with its local server started (default `http://127.0.0.1:1234`) and at least one chat model
-- *(recommended)* the **`lms` CLI** for automatic context-window management
+- That's it to get started. For your own models, one of:
+  - an **API key** for any provider in the [models.dev](https://models.dev) catalog (Anthropic, OpenAI, Google, OpenRouter, Groq, xAI, DeepSeek, Mistral, …), or
+  - a **local server** speaking the OpenAI-compatible API — [LM Studio](https://lmstudio.ai) (default `http://127.0.0.1:1234`), [Ollama](https://ollama.com) (`11434`), [vLLM](https://docs.vllm.ai) (`8000`), or anything else
+- *(LM Studio only, recommended)* the **`lms` CLI** as a fallback for automatic context-window management
 
 > **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`; an install on your `PATH` or in `~/.opencode/bin` is preferred over the bundled copy if present.
 
@@ -105,16 +107,18 @@ any time with **Switch to Release Version**.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `opencodeChat.lmStudioBaseUrl` | `http://127.0.0.1:1234/v1` | LM Studio OpenAI-compatible base URL |
+| `opencodeChat.autoDetectLocalServers` | `true` | Offer local servers found on the well-known ports on first run |
 | `opencodeChat.opencodePath` | _(bundled)_ | Override path to an `opencode` binary; empty uses your own install (PATH / `~/.opencode`) or the bundled one |
 | `opencodeChat.serverPort` | `0` | Embedded server port (0 = auto) |
-| `opencodeChat.defaultModel` | _(first)_ | Default model id |
+| `opencodeChat.defaultModel` | _(first)_ | Default model as `provider/model`, e.g. `anthropic/claude-sonnet-4-6` |
 | `opencodeChat.agent` | `build` | `build` or `plan` |
-| `opencodeChat.autoEnsureContext` | `true` | Reload model with adequate context before prompting |
-| `opencodeChat.minContextLength` | `32768` | Context length to (re)load with |
-| `opencodeChat.defaultThinkingEffort` | `auto` | Starting reasoning effort (`auto`/`off`/`low`/`medium`/`high`) for models you haven't set one for |
-| `opencodeChat.gpuOffload` | `max` | GPU offload for `lms load` |
-| `opencodeChat.healthCheckSeconds` | `30` | Health/model poll cadence while connected (5–600). Disconnected retries stay at 5s; the model list refreshes immediately while the model picker is open |
+| `opencodeChat.autoEnsureContext` | `true` | *(LM Studio only)* Reload the model with an adequate context window before prompting |
+| `opencodeChat.minContextLength` | `32768` | *(LM Studio only)* Context length to (re)load with |
+| `opencodeChat.defaultThinkingEffort` | `auto` | Starting reasoning effort for models you haven't set one for; snapped to the levels each model declares |
+| `opencodeChat.gpuOffload` | `max` | *(LM Studio only)* GPU offload for `lms load` |
+| `opencodeChat.healthCheckSeconds` | `30` | Local-endpoint poll cadence while connected (5–600). Cloud providers are never polled. Disconnected retries stay at 5s; the model list refreshes immediately while the model picker is open |
+
+Providers themselves are **not** settings — they live in the Providers panel, because their API keys belong in Secret Storage rather than a JSON file.
 | `opencodeChat.mcpServers` | `{}` | MCP servers to expose to the agent (in addition to auto-discovered ones) |
 
 ## MCP servers
@@ -207,18 +211,29 @@ Each row shows the transport (local/remote) and the command or URL it was config
 VS Code webview (chat UI)
         │  postMessage
         ▼
-Extension host (bridge)
+Extension host (bridge)          providers + keys (Secret Storage)
         │  HTTP + SSE  (raw fetch)
         ▼
-opencode serve   ──OpenAI /v1──▶  LM Studio (local model)
-   (headless, config injected via OPENCODE_CONFIG_CONTENT)
+opencode serve  ──┬── Anthropic / OpenAI / Google / OpenRouter / …
+  (headless,      ├── LM Studio · Ollama · vLLM   (OpenAI /v1, local)
+   config         └── OpenCode Zen                (built in, no key)
+   injected)
 ```
 
-The LM Studio provider is injected into OpenCode at launch via the
+Every provider you enable is injected into OpenCode at launch via the
 `OPENCODE_CONFIG_CONTENT` environment variable — **nothing is written to your
-workspace or global config.** Discovered LM Studio models are declared in the
-provider's `models` map (OpenCode requires this for custom OpenAI-compatible
-providers).
+workspace or global config.**
+
+- **Cloud providers** need only their `apiKey`; the model list, limits, prices
+  and reasoning variants come from OpenCode's own catalog, which is why 170+
+  providers work without a line of per-provider code.
+- **Local servers** are declared as `@ai-sdk/openai-compatible` providers with
+  their models enumerated from the server itself, since no catalog knows what
+  you are running on your own machine.
+- **API keys never touch the environment.** `OPENCODE_CONFIG_CONTENT` is process
+  environment, and stdio MCP servers inherit it — so each key is written to its
+  own `0600` file and referenced with OpenCode's `{file:…}` placeholder, which
+  the server resolves at load. Removing a provider deletes its file.
 
 ## Develop from source
 

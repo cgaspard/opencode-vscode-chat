@@ -1,0 +1,21 @@
+version: 0.1.0
+date: 2026-07-31
+highlights:
+  - First release. A full coding agent in VS Code, running on whichever models you bring — cloud API keys, local servers, or both at once.
+  - Works before you configure anything: OpenCode's free Zen models are built in, so a fresh install answers your first question with no key and no account.
+  - Add a provider in two clicks — search the models.dev catalog, paste a key. 170+ providers work with no per-provider setup, because model lists, context limits, capabilities and prices all come from the provider itself.
+  - Local servers are first class — LM Studio, Ollama, vLLM or any OpenAI-compatible endpoint, with a one-click scan of the usual ports.
+added:
+  - Providers panel — configured providers with live status, searchable catalog, masked key entry, per-provider enable/disable, and edit/remove.
+  - Model picker grouped by provider, showing context window, vision/tool badges, and price per million tokens where a model is priced.
+  - LM Studio extras where they apply — loaded/unloaded state, publisher, format and quantization, load/eject from the menu, and automatic context-window management.
+  - Reasoning effort derived from what each model actually declares — Anthropic low/medium/high/max, OpenAI medium/high/xhigh, Auto/Off/On for most local models, hidden entirely for models that cannot reason.
+  - Agent panel carried over from the LM Studio edition it forks — tool cards with permission prompts, build/plan modes, live todo lists, user-defined agents and delegation, autonomous goals with an LLM judge, session history and restore, MCP servers discovered from Claude Code and VS Code configs, skills, and slash commands.
+changed:
+  - Models are identified as provider/model, so the same model id under two providers is never ambiguous.
+  - Every enabled provider is live at once — switching from a local model to Claude is a model choice, not a server switch, and keeps your session.
+  - The offline banner now means nothing at all can serve a model. A single local server going down while another provider works is reported on that provider's row, and on the banner only when it is the one serving your selected model.
+  - Cloud providers are never polled for liveness — probing a metered API would bill you to learn what the next real request reports for free.
+fixed: []
+removed:
+  - The single hardcoded LM Studio server, and its opencodeChat.lmStudioBaseUrl setting, replaced by the provider registry.

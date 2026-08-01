@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Generate a 256x256 PNG icon for OpenCode Chat. Pure Node, no deps.
 //
-// Design: a family member of the vscode-debug-mcp icon — deep slate
-// rounded square with a soft radial glow, cyan circuit-trace antennae that
-// terminate in rounded-square connector nodes, and a central emblem that is
-// LM Studio's offset stacked bars, rendered in shaded violet. Reads as
-// "LM Studio, plugged into AI tooling."
+// Design: a family member of the vscode-debug-mcp icon — deep slate rounded
+// square with a soft radial glow, cyan circuit traces, and a central emblem of
+// three provider nodes converging on one violet agent core. Reads as "bring
+// your own models, one agent" — and deliberately borrows no vendor's mark,
+// since this extension belongs to none of them.
 
 const fs = require('fs');
 const path = require('path');
@@ -16,9 +16,9 @@ const RADIUS = 44;
 
 const BG = [0x1a, 0x1f, 0x2a, 0xff]; // deep slate
 const BG_GLOW = [0x2c, 0x26, 0x46, 0xff]; // violet-tinted center glow
-const BAR = [0x8b, 0x5c, 0xf6, 0xff]; // LM Studio violet
-const BAR_DARK = [0x53, 0x37, 0xa8, 0xff]; // bar shadow / underside
-const BAR_HILITE = [0xc9, 0xb8, 0xff, 0xff]; // top sheen
+const CORE = [0x8b, 0x5c, 0xf6, 0xff]; // agent core violet
+const CORE_DARK = [0x53, 0x37, 0xa8, 0xff]; // core shadow / underside
+const CORE_HILITE = [0xc9, 0xb8, 0xff, 0xff]; // top sheen
 const WIRE = [0x7b, 0xc3, 0xe8, 0xff]; // cool cyan circuitry
 const NODE = [0xa8, 0xe0, 0xff, 0xff]; // brighter node
 
@@ -129,29 +129,35 @@ radialGlow(SIZE / 2, SIZE / 2 + 18, 170, BG_GLOW);
 
 const cx = SIZE / 2;
 
-// --- LM Studio offset bars (emblem), large + centered, shaded violet ---
-// 24-unit logo space -> pixels. Logo bbox: x[0,24], y[2,21.4].
-const S = 7.1;
-const OFF_X = 42.8;
-const OFF_Y = 45;
-const r = 1.273;
-const thick = r * 2 * S; // ~18px bars
-const BARS = [
-  [2.84, 16.947, 3.273],
-  [7.935, 22.04, 6.604],
-  [4.898, 19.004, 9.935],
-  [1.273, 15.38, 13.461],
-  [4.898, 19.004, 16.792],
-  [13.029, 22.727, 20.122],
+// --- Emblem: three provider nodes converging on one agent core ---
+const EY = 134; // sits a touch below centre so the glow reads behind it
+const CORE_R = 34;
+const NODES = [
+  [56, 74],
+  [56, 194],
+  [206, EY],
 ];
-for (const [x0, x1, yc] of BARS) {
-  const ax = OFF_X + x0 * S;
-  const bx = OFF_X + x1 * S;
-  const ay = OFF_Y + yc * S;
-  drawLine(ax, ay + 4, bx, ay + 4, thick, BAR_DARK); // drop shadow
-  drawLine(ax, ay, bx, ay, thick, BAR); // body
-  drawLine(ax + 7, ay - thick * 0.27, bx - 7, ay - thick * 0.27, thick * 0.24, BAR_HILITE); // top sheen
+
+// Traces first, so the nodes and core sit on top of them.
+for (const [nx, ny] of NODES) {
+  const dx = cx - nx;
+  const dy = EY - ny;
+  const len = Math.hypot(dx, dy);
+  // Stop the trace at the core's edge rather than under it — a line that
+  // disappears beneath the core still shows through its anti-aliased rim.
+  const ex = cx - (dx / len) * (CORE_R - 2);
+  const ey = EY - (dy / len) * (CORE_R - 2);
+  drawLine(nx, ny, ex, ey, 9, WIRE);
 }
+for (const [nx, ny] of NODES) {
+  fillRoundedNode(nx, ny, 17, 7, BG, NODE);
+}
+
+// The core: shaded sphere with a drop shadow and a top sheen, matching the
+// lighting of the connector nodes.
+fillCircle(cx, EY + 5, CORE_R, CORE_DARK);
+fillCircle(cx, EY, CORE_R, CORE);
+fillCircle(cx - CORE_R * 0.22, EY - CORE_R * 0.34, CORE_R * 0.42, CORE_HILITE);
 
 // --- Encode PNG ---
 function crc32(buf) {
