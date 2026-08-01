@@ -18,6 +18,7 @@ jobs:
       tag: ${{ steps.ver.outputs.tag }}
       prerelease: ${{ steps.ver.outputs.prerelease }}
       channel: ${{ steps.ver.outputs.channel }}
+      name: ${{ steps.ver.outputs.name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +29,9 @@ jobs:
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Read the package name rather than repeating it in six filenames —
+          # they silently disagreed with package.json once already.
+          echo "name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
           # Channel policy (VS Code Marketplace pre-release convention):
           #   - a -suffix tag (v1.2.3-rc.1) is a GitHub-only draft: never
           #     published to the Marketplace (it can't be — Marketplace
@@ -123,14 +127,14 @@ jobs:
           if [ "${{ needs.prepare.outputs.channel }}" = "prerelease" ]; then
             PRE="--pre-release"
           fi
-          npx vsce package $PRE --target ${{ matrix.target }} --out "opencode-chat-${{ matrix.target }}-${VER}.vsix"
+          npx vsce package $PRE --target ${{ matrix.target }} --out "${{ needs.prepare.outputs.name }}-${{ matrix.target }}-${VER}.vsix"
           # Stable versionless per-platform mirror for predictable download URLs.
-          cp "opencode-chat-${{ matrix.target }}-${VER}.vsix" "opencode-chat-${{ matrix.target }}.vsix"
+          cp "${{ needs.prepare.outputs.name }}-${{ matrix.target }}-${VER}.vsix" "${{ needs.prepare.outputs.name }}-${{ matrix.target }}.vsix"
 
       - name: Verify the VSIX actually bundled the binary
         run: |
           VER="${{ needs.prepare.outputs.version }}"
-          VSIX="opencode-chat-${{ matrix.target }}-${VER}.vsix"
+          VSIX="${{ needs.prepare.outputs.name }}-${{ matrix.target }}-${VER}.vsix"
           EXE="extension/bin/opencode"
           case "${{ matrix.target }}" in win32-*) EXE="extension/bin/opencode.exe" ;; esac
           SIZE=$(unzip -l "$VSIX" "$EXE" | awk -v f="$EXE" '$4==f {print $1}')
@@ -145,8 +149,8 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           files: |
-            opencode-chat-${{ matrix.target }}-${{ needs.prepare.outputs.version }}.vsix
-            opencode-chat-${{ matrix.target }}.vsix
+            ${{ needs.prepare.outputs.name }}-${{ matrix.target }}-${{ needs.prepare.outputs.version }}.vsix
+            ${{ needs.prepare.outputs.name }}-${{ matrix.target }}.vsix
 
       # Publish the exact .vsix attached to the Release so the two artifacts are
       # byte-identical. Odd-minor versions go to the Marketplace's PRE-RELEASE
@@ -166,4 +170,4 @@ jobs:
           if [ "${{ needs.prepare.outputs.channel }}" = "prerelease" ]; then
             PRE="--pre-release"
           fi
-          npx vsce publish $PRE --packagePath "opencode-chat-${{ matrix.target }}-${VER}.vsix"
+          npx vsce publish $PRE --packagePath "${{ needs.prepare.outputs.name }}-${{ matrix.target }}-${VER}.vsix"

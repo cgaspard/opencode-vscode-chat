@@ -52,7 +52,10 @@ if (!process.argv.includes('--no-footer')) {
   out.push('Install the `.vsix` attached to this release via:');
   out.push('');
   out.push('```bash');
-  out.push(`code --install-extension opencode-chat-${data.version}.vsix`);
+  // The package name, not a literal — the .vsix filenames the release workflow
+  // produces are derived from it, and a hardcoded copy went stale once already.
+  const pkgName = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).name;
+  out.push(`code --install-extension ${pkgName}-${data.version}.vsix`);
   out.push('```');
 }
 
