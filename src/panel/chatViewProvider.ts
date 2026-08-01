@@ -87,7 +87,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 export function openChatPanel(extensionUri: vscode.Uri, deps: BridgeDeps): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
     'opencodeChat.chatPanel',
-    'OpenCode Chat',
+    'OpenCode',
     vscode.ViewColumn.Active,
     {
       enableScripts: true,
@@ -98,7 +98,7 @@ export function openChatPanel(extensionUri: vscode.Uri, deps: BridgeDeps): vscod
   panel.webview.html = getHtml(panel.webview, extensionUri);
   const bridge = new ChatBridge(panel.webview, deps);
   bridge.setTitleSink((t) => {
-    panel.title = t ? `LM Studio · ${t}` : 'OpenCode Chat';
+    panel.title = t ? `OpenCode · ${t}` : 'OpenCode';
   });
   bridge.setVisible(panel.visible);
   panel.onDidChangeViewState(() => bridge.setVisible(panel.visible));
