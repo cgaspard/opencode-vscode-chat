@@ -3,6 +3,21 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.2.1
+
+_Released 2026-08-01_
+
+### Highlights
+- The provider on/off switch now responds the moment you click it, instead of appearing stuck while the agent restarts.
+- OpenCode Zen can take a paid API key. Previously it could only ever run on its free tier.
+
+### Added
+- A paid OpenCode Zen key can be entered from the Providers panel. The row shows whether Zen is running on the free tier or your paid account, and removing the key drops back to free.
+
+### Fixed
+- Toggling a provider used to leave the switch in its old position until the agent finished restarting — seconds later — so it read as a control that did nothing. It now flips immediately, shows that work is in progress, and corrects itself if the change does not apply. A second click while one is still applying is ignored rather than queueing another restart.
+- A stored Zen key survives disabling and re-enabling the provider. It was previously discarded from the panel's view while still being used, so the key was live but invisible.
+
 ## v0.2.0
 
 _Released 2026-08-01_
