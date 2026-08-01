@@ -1365,14 +1365,6 @@ body {
   opacity: 1;
 }
 
-/* server add form inside the server menu */
-.server-add {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 9px;
-  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
-}
 .server-input {
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
@@ -1385,8 +1377,16 @@ body {
 .server-input:focus {
   border-color: var(--vscode-focusBorder, var(--accent));
 }
-.server-add .model-action {
-  align-self: flex-end;
+/* Inline literals in form hints (an address, a port). */
+.effort-note code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  opacity: 0.9;
+}
+/* "— optional" trailing a field label. */
+.label-opt {
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* connection notice (server unreachable) — soft rounded card */
@@ -1682,7 +1682,9 @@ body.hide-reasoning .part-reasoning {
   align-items: flex-start;
   justify-content: center;
   padding-top: 44px;
-  z-index: 10;
+  /* Above .model-menu (30), or the scrim dims the whole panel *except* the
+     menu that opened the dialog — which read as the menu being on top of it. */
+  z-index: 40;
 }
 .overlay.hidden {
   display: none;
@@ -2115,13 +2117,27 @@ body.compacting .send-btn {
    Providers panel + grouped model picker
    --------------------------------------------------------------------------- */
 
-/* The providers panel carries more sections than the model menu (list, detected
-   servers, tabs, add form), so it gets more room and scrolls per-section. */
+/* Two regions, each scrolling independently and each with a hard cap: the
+   configured list on top, the add-a-provider search below. The caps sum to less
+   than the menu's own max-height, which is what keeps the search box on screen
+   no matter how many providers are configured. (Before this, the panel relied
+   on `overflow: hidden` alone and simply clipped whatever didn't fit.) */
 .provider-menu {
-  max-height: 72vh;
+  max-height: 78vh;
 }
-.provider-menu .model-menu-list {
-  max-height: 34vh;
+.provider-list {
+  padding: 4px;
+  overflow-y: auto;
+  max-height: 32vh;
+  flex: none;
+}
+.provider-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  min-height: 0;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
 }
 
 /* Provider rows carry three trailing actions (toggle / edit / remove) rather
@@ -2132,48 +2148,89 @@ body.compacting .send-btn {
 .provider-row .model-action {
   flex: none;
 }
+/* A real action button, rendered only to hold its column. visibility (not
+   display) keeps it in the layout, so every row's switch lands at the same x
+   without anyone having to keep a hand-measured width in sync. */
+.model-action.ghost {
+  visibility: hidden;
+  pointer-events: none;
+}
 .model-row.dimmed {
   opacity: 0.55;
 }
+/* A real switch rather than a button labelled "On": a button reading its own
+   state is ambiguous about whether the label is the state or what clicking
+   does. The track's fill answers that at a glance. */
 .model-action.provider-toggle {
-  min-width: 34px;
-  text-align: center;
-}
-
-/* Tabs choosing what kind of provider to add. */
-.provider-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 9px 0;
-  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
-}
-.provider-tab {
-  flex: 1;
-  padding: 5px 8px;
-  font-size: 11px;
-  border-radius: 6px 6px 0 0;
-  border: 1px solid transparent;
-  border-bottom: none;
+  padding: 3px 4px;
+  border: none;
   background: transparent;
-  color: var(--vscode-descriptionForeground);
-  cursor: pointer;
 }
-.provider-tab:hover {
-  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+.toggle-track {
+  display: block;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  /* Outlined when off so the control still reads as a switch against a panel
+     the same colour as the fill. */
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.55));
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
-.provider-tab.active {
-  color: var(--vscode-foreground);
-  background: var(--vscode-list-activeSelectionBackground, rgba(108, 92, 231, 0.22));
-  border-color: var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
+.toggle-knob {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 3px;
+  border-radius: 50%;
+  /* Never the widget background: that is the colour of the panel *behind* the
+     switch, so the knob rendered as a hole punched in the track rather than a
+     knob sitting on it. */
+  background: var(--vscode-descriptionForeground, #9a9ab0);
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+}
+.provider-toggle.on .toggle-track {
+  background: var(--accent);
+  box-shadow: none;
+}
+.provider-toggle.on .toggle-knob {
+  background: var(--accent-fg);
+  transform: translateX(12px);
+}
+.provider-toggle:hover .toggle-knob {
+  background: var(--vscode-foreground);
+}
+.provider-toggle.on:hover .toggle-knob {
+  background: var(--accent-fg);
+}
+.provider-toggle:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--accent));
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
-/* The searchable catalog list under the "Add API key" tab. */
+/* The one searchable add list: keyed providers, then local servers. */
 .catalog-list {
-  max-height: 26vh;
+  max-height: 32vh;
   overflow-y: auto;
 }
 .catalog-list .model-row {
   padding: 5px 7px;
+}
+/* Divider for the "these are local servers, not keyed providers" group that
+   answers a search like "LM" from inside the API-key tab. */
+.catalog-section {
+  padding: 8px 7px 3px;
+  margin-top: 4px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* Local servers found by the port scan, offered above the add form. */
@@ -2207,8 +2264,37 @@ body.compacting .send-btn {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-right: auto;
 }
 .model-group-count {
   flex: none;
   opacity: 0.7;
+}
+/* Collapsible provider groups. The count carries the weight when a group is
+   shut — it is the only thing telling you what is behind the header. */
+.model-group.collapsible {
+  cursor: pointer;
+  user-select: none;
+  padding-bottom: 6px;
+}
+.model-group.collapsible:hover {
+  color: var(--vscode-foreground);
+}
+.model-group-caret {
+  flex: none;
+  display: flex;
+  align-items: center;
+  transform: rotate(-90deg);
+  transition: transform 120ms ease;
+  opacity: 0.8;
+}
+.model-group.open .model-group-caret {
+  transform: rotate(0deg);
+}
+.model-group.collapsible:not(.open) .model-group-count {
+  opacity: 1;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.25));
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
 }

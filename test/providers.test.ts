@@ -6,7 +6,9 @@ import {
   assembleModels,
   catalogEntries,
   formatModelRef,
+  isLocalCatalogEntry,
   isUsable,
+  knownLocalServers,
   parseModelRef,
   pickModelRef,
   searchCatalog,
@@ -87,6 +89,79 @@ test('catalogEntries normalizes and sorts by display name', () => {
   assert.equal(anthropic.modelCount, 2);
   assert.deepEqual(anthropic.env, ['ANTHROPIC_API_KEY']);
   assert.equal(anthropic.doc, 'https://x');
+});
+
+test('catalogEntries carries the published base URL through', () => {
+  const entries = catalogEntries({
+    lmstudio: { id: 'lmstudio', name: 'LMStudio', api: 'http://127.0.0.1:1234/v1', models: {} },
+  });
+  assert.equal(entries[0].api, 'http://127.0.0.1:1234/v1');
+});
+
+// The real catalog ships four loopback "providers" (lmstudio, atomic-chat,
+// lynkr, privatemode-ai). Each is a local server, and offering it an API-key
+// prompt asks for a credential that does not exist and gives no way to say
+// where the server actually lives.
+test('isLocalCatalogEntry spots a loopback provider in any of its forms', () => {
+  assert.equal(isLocalCatalogEntry({ api: 'http://127.0.0.1:1234/v1' }), true); // LMStudio
+  assert.equal(isLocalCatalogEntry({ api: 'http://localhost:8080/v1' }), true); // Privatemode AI
+  assert.equal(isLocalCatalogEntry({ api: 'http://127.0.0.2:9000' }), true); // all of 127/8
+  assert.equal(isLocalCatalogEntry({ api: 'http://[::1]:1234/v1' }), true);
+  assert.equal(isLocalCatalogEntry({ api: 'http://0.0.0.0:1234/v1' }), true);
+});
+
+test('isLocalCatalogEntry leaves genuine hosted providers alone', () => {
+  // Ollama Cloud is a real metered API that shares a brand with a local
+  // runtime — it must keep its key prompt.
+  assert.equal(isLocalCatalogEntry({ api: 'https://ollama.com/v1' }), false);
+  assert.equal(isLocalCatalogEntry({ api: 'https://api.anthropic.com/v1' }), false);
+  // A hostname merely containing "localhost" is not loopback.
+  assert.equal(isLocalCatalogEntry({ api: 'https://notlocalhost.com/v1' }), false);
+  assert.equal(isLocalCatalogEntry({ api: 'not a url' }), false);
+  assert.equal(isLocalCatalogEntry({ api: '' }), false);
+  assert.equal(isLocalCatalogEntry({}), false);
+  assert.equal(isLocalCatalogEntry(undefined), false);
+});
+
+const LOCAL_RAW = {
+  lmstudio: { id: 'lmstudio', name: 'LMStudio', api: 'http://127.0.0.1:1234/v1', models: {} },
+  lynkr: { id: 'lynkr', name: 'Lynkr', api: 'http://127.0.0.1:8081/v1', models: {} },
+  'ollama-cloud': { id: 'ollama-cloud', name: 'Ollama Cloud', api: 'https://ollama.com/v1', models: {} },
+};
+
+// An empty query is the panel's default view, and it shares a bounded list with
+// the keyed providers — so it stays a curated head rather than every runtime
+// models.dev happens to carry.
+test('knownLocalServers offers only the probe targets by default', () => {
+  const opts = knownLocalServers(catalogEntries(LOCAL_RAW));
+  assert.deepEqual(opts.map((o) => o.name), ['LM Studio', 'Ollama', 'vLLM']);
+  // Ollama exists ONLY as a probe target — the catalog's only Ollama entry is
+  // the hosted API, which must never leak into the local list.
+  assert.equal(opts.find((o) => o.name === 'Ollama')!.url, 'http://127.0.0.1:11434/v1');
+  assert.deepEqual(knownLocalServers([]).map((o) => o.name), ['LM Studio', 'Ollama', 'vLLM']);
+});
+
+test('a query reaches the catalog runtimes behind the curated head', () => {
+  const entries = catalogEntries(LOCAL_RAW);
+  assert.deepEqual(knownLocalServers(entries, 'lynkr').map((o) => o.name), ['Lynkr']);
+  assert.equal(knownLocalServers(entries, 'lynkr')[0].url, 'http://127.0.0.1:8081/v1');
+  assert.deepEqual(knownLocalServers(entries, 'anthropic'), []);
+});
+
+test('knownLocalServers matches a query across the spelling difference', () => {
+  const entries = catalogEntries(LOCAL_RAW);
+  // "lmstudio" typed with no space still finds "LM Studio", and vice versa —
+  // punctuation is stripped from both sides before comparing. One row, not two:
+  // the probe target absorbs the catalog's "LMStudio" and keeps its own port.
+  const oneWord = knownLocalServers(entries, 'lmstudio');
+  assert.deepEqual(oneWord.map((o) => o.name), ['LM Studio']);
+  assert.equal(oneWord[0].url, 'http://127.0.0.1:1234/v1');
+  assert.deepEqual(knownLocalServers(entries, 'lm studio').map((o) => o.name), ['LM Studio']);
+  assert.deepEqual(knownLocalServers(entries, 'oll').map((o) => o.name), ['Ollama']);
+  // Substring semantics, matching how searchCatalog treats the cloud list: a
+  // bare "lm" is inside "vllm" too. Harmless on a list this short, and the
+  // alternative — dropping vLLM for someone typing "llm" — is worse.
+  assert.deepEqual(knownLocalServers(entries, 'lm').map((o) => o.name), ['LM Studio', 'vLLM']);
 });
 
 test('catalogEntries survives junk without throwing', () => {

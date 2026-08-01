@@ -3,6 +3,7 @@
  * server config, and the webview (presets + meter). Pure so it is unit-testable
  * and browser-safe.
  */
+import type { ConnectionKind } from './providers';
 
 /**
  * Clamp a requested context window to a model's real maximum, so we never ask
@@ -54,12 +55,32 @@ export interface WindowModel {
   contextLength?: number;
   /** The model's own maximum context window. */
   maxContextLength?: number;
+  /** Which kind of connection serves it — decides who owns the window. */
+  providerKind?: ConnectionKind;
+}
+
+/**
+ * Whether the context window is ours to choose, or the provider's.
+ *
+ * Only local endpoints: `minContextLength` reaches a model exclusively through
+ * the declaration we build for a local provider (serverManager.localModelsFor,
+ * which sets `limit.context`/`limit.output`) and through LM Studio's load
+ * lifecycle. A builtin/catalog model runs whatever window its provider
+ * publishes — nothing we set is ever sent — so the setting is inert there, and
+ * an unknown kind is treated the same way rather than pretending we control it.
+ */
+export function isWindowManaged(model?: { providerKind?: ConnectionKind }): boolean {
+  return model?.providerKind === 'local';
 }
 
 /**
  * The context window to display in the meter: the loaded window if the model is
  * loaded, otherwise the window we would load it at — min(configured, model max)
  * — so it tracks the selected model rather than a single hard-coded number.
+ *
+ * For a provider-managed model the configured minimum is not part of that math:
+ * measuring a 195K cloud model against a 32K setting we never send would report
+ * the bar as full five times too early.
  */
 export function computeWindow(model: WindowModel | undefined, minContext: number): number {
   const min = Number.isFinite(minContext) && minContext > 0 ? minContext : 0;
@@ -70,7 +91,9 @@ export function computeWindow(model: WindowModel | undefined, minContext: number
     return model.contextLength;
   }
   if (model.maxContextLength && model.maxContextLength > 0) {
-    return Math.min(min || model.maxContextLength, model.maxContextLength);
+    return isWindowManaged(model)
+      ? Math.min(min || model.maxContextLength, model.maxContextLength)
+      : model.maxContextLength;
   }
   return min;
 }

@@ -8,7 +8,7 @@ import {
   shouldSuppressMessage,
 } from '../core/compaction';
 import { matchSlashPrefix, mergeSlashCommands, parseSlashInput } from '../core/commands';
-import { computeWindow, contextPresets, formatTokens } from '../core/context';
+import { computeWindow, contextPresets, formatTokens, isWindowManaged } from '../core/context';
 import {
   type AgentInfo,
   agentLabel,
@@ -40,7 +40,7 @@ import { modelDisambiguator, modelIdentity } from '../core/models';
 import { isTodoCardCollapsed, summarizeTodos, Todo } from '../core/todos';
 import { buildAnswers, isEmptyAnswer, parseQuestionBlob, QInfo } from '../core/question';
 import type { MessageWithParts, OpencodeEvent, Part } from '../opencode/protocol';
-import type { HostToWebview, UiAgent, UiCatalogProvider, UiCommand, UiDetectedServer, UiGoal, UiImage, UiMcpServer, UiModel, UiProvider, UiSession, UiSkill, WebviewToHost } from '../shared';
+import type { HostToWebview, LocalServerOption, UiAgent, UiCatalogProvider, UiCommand, UiDetectedServer, UiGoal, UiImage, UiMcpServer, UiModel, UiProvider, UiSession, UiSkill, WebviewToHost } from '../shared';
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: unknown): void;
@@ -93,6 +93,12 @@ interface State {
   /** The add-provider picker's current page of the models.dev catalog. */
   catalog: UiCatalogProvider[];
   catalogQuery: string;
+  /** Known local runtimes, offered as prefills in the local tab. */
+  localServers: LocalServerOption[];
+  /** The subset matching the current search, shown as a hint in the key tab. */
+  localMatches: LocalServerOption[];
+  /** Provider groups open in the model picker; reseeded on every open. */
+  expandedProviders: Set<string>;
   /** Local servers the last detect probe found, offered as one-click adds. */
   detected: UiDetectedServer[];
   activeFile: { path: string; chars: number } | null;
@@ -134,6 +140,9 @@ const state: State = {
   providers: [],
   catalog: [],
   catalogQuery: '',
+  localServers: [],
+  localMatches: [],
+  expandedProviders: new Set<string>(),
   detected: [],
   activeFile: null,
   includeActiveFile: persisted.includeActiveFile ?? true,
@@ -185,8 +194,11 @@ const icon = {
   stop: `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor"/></svg>`,
   trash: `<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M6 1.5h4l.5 1H14v1H2v-1h3.5zM3.5 4.5h9l-.7 9.2a1 1 0 0 1-1 .8H5.2a1 1 0 0 1-1-.8z"/></svg>`,
   close: `<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4"/></svg>`,
-  spark: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" fill-rule="evenodd" d="M2.84 2a1.273 1.273 0 100 2.547h14.107a1.273 1.273 0 100-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H22.04a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h14.106a1.274 1.274 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H15.38a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h14.106a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h9.698a1.273 1.273 0 100-2.547h-9.698z"/></svg>`,
-  sparkLarge: `<svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" fill-rule="evenodd" d="M2.84 2a1.273 1.273 0 100 2.547h14.107a1.273 1.273 0 100-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H22.04a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h14.106a1.274 1.274 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H15.38a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h14.106a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h9.698a1.273 1.273 0 100-2.547h-9.698z"/></svg>`,
+  // OpenCode's own mark: a chunky block "o" on a 4px grid, taken from their
+  // favicon (sst/opencode packages/web/public/favicon-v3.svg) so this reads as
+  // the same product. The staggered bars that used to sit here were LM Studio's
+  // wordmark, inherited from the fork this started as.
+  markLarge: `<svg viewBox="0 0 24 24" width="44" height="44"><path fill="currentColor" fill-rule="evenodd" d="M6 4h12v16H6V4zm3 3v10h6V7H9z"/></svg>`,
   file: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M4 1.5h5L13 5.5V14a.5.5 0 0 1-.5.5h-8A.5.5 0 0 1 4 14zM9 2v3h3z"/></svg>`,
   tool: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M11.5 1.5a3.5 3.5 0 0 0-3.4 4.4L1.7 12.3l1.9 1.9 6.4-6.4A3.5 3.5 0 1 0 11.5 1.5z"/></svg>`,
   brain: `<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M6 1.6a2.1 2.1 0 0 0-2 1.5 2 2 0 0 0-1.3 3.2A2.1 2.1 0 0 0 3.6 10c.1 1 1 1.9 2.1 1.9.3 0 .3.1.3.4v1.7h1V3.8c0-.5.1-.7.4-1a2.1 2.1 0 0 0-1.4-1.2zm4 0a2.1 2.1 0 0 1 2 1.5 2 2 0 0 1 1.3 3.2A2.1 2.1 0 0 1 12.4 10c-.1 1-1 1.9-2.1 1.9-.3 0-.3.1-.3.4v1.7H9V3.8c0-.5-.1-.7-.4-1A2.1 2.1 0 0 1 10 1.6z"/></svg>`,
@@ -261,7 +273,7 @@ function build(): void {
     <div id="conn-banner" class="conn-banner hidden"></div>
     <div id="messages" class="messages">
       <div id="welcome" class="welcome">
-        <div class="welcome-logo">${icon.sparkLarge}</div>
+        <div class="welcome-logo">${icon.markLarge}</div>
         <div class="welcome-title">OpenCode Chat</div>
         <div class="welcome-sub">Local agentic coding, powered by OpenCode.</div>
         <div class="welcome-hint">Pick a model below and describe a task.</div>
@@ -326,9 +338,10 @@ function build(): void {
         <button id="model-refresh" class="icon-btn" title="Rescan models">${icon.refresh}</button>
       </div>
       <div id="model-menu-list" class="model-menu-list"></div>
-      <div class="model-menu-foot">
+      <div class="model-menu-foot" id="ctx-foot">
         <span class="ctx-foot-label">Context window</span>
         <div id="ctx-presets" class="ctx-presets"></div>
+        <span class="effort-note" id="ctx-note"></span>
       </div>
       <div class="model-menu-foot" id="effort-foot">
         <span class="ctx-foot-label">Reasoning effort</span>
@@ -342,21 +355,12 @@ function build(): void {
         <span>Providers</span>
         <button id="provider-detect" class="icon-btn" title="Scan for local servers (LM Studio, Ollama, vLLM)">${icon.refresh}</button>
       </div>
-      <div id="server-menu-list" class="model-menu-list"></div>
+      <div id="server-menu-list" class="provider-list"></div>
       <div id="detected-list" class="detected-list hidden"></div>
-      <div class="provider-tabs">
-        <button id="tab-cloud" class="provider-tab active" data-tab="cloud">Add API key</button>
-        <button id="tab-local" class="provider-tab" data-tab="local">Add local server</button>
-      </div>
-      <div id="add-cloud" class="server-add">
-        <input id="catalog-search" class="server-input" placeholder="Search 170+ providers (anthropic, openai, groq…)" />
+      <div class="provider-add">
+        <span class="ctx-foot-label">Add a provider</span>
+        <input id="catalog-search" class="server-input" placeholder="Search providers and local servers…" />
         <div id="catalog-list" class="catalog-list"></div>
-      </div>
-      <div id="add-local" class="server-add hidden">
-        <input id="server-add-name" class="server-input" placeholder="Name (e.g. Workstation)" />
-        <input id="server-add-url" class="server-input" placeholder="http://192.168.1.50:1234" />
-        <input id="server-add-key" class="server-input" type="password" autocomplete="off" placeholder="API key (optional, for auth proxies)" />
-        <button id="server-add-btn" class="model-action load">Add local server</button>
       </div>
     </div>
     <div id="key-overlay" class="overlay hidden">
@@ -374,6 +378,29 @@ function build(): void {
           <div class="server-edit-actions">
             <button id="key-save" class="model-action load">Save</button>
             <button id="key-cancel" class="clear-all-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="local-overlay" class="overlay hidden">
+      <div class="overlay-card">
+        <div class="overlay-head">
+          <span id="local-title">Add local server</span>
+          <div class="overlay-head-actions">
+            <button id="local-close" class="icon-btn">${icon.close}</button>
+          </div>
+        </div>
+        <div class="server-edit-form">
+          <label class="server-edit-label" for="local-url">Address</label>
+          <input id="local-url" class="server-input" placeholder="http://192.168.1.50:1234" />
+          <span class="effort-note">On this machine or anywhere on your network — a server on another box works the same, it just isn't on <code>127.0.0.1</code>. We'll detect whether it's LM Studio, Ollama or vLLM.</span>
+          <label class="server-edit-label" for="local-name">Name</label>
+          <input id="local-name" class="server-input" placeholder="e.g. Workstation" />
+          <label class="server-edit-label" for="local-key">API key <span class="label-opt">— optional, for auth proxies</span></label>
+          <input id="local-key" class="server-input" type="password" autocomplete="off" />
+          <div class="server-edit-actions">
+            <button id="local-save" class="model-action load">Add server</button>
+            <button id="local-cancel" class="clear-all-btn">Cancel</button>
           </div>
         </div>
       </div>
@@ -657,25 +684,31 @@ function build(): void {
     e.stopPropagation();
     toggleServerMenu();
   });
-  document.getElementById('server-add-btn')!.addEventListener('click', (e) => {
+  // Local-server form (modal).
+  document.getElementById('local-save')!.addEventListener('click', (e) => {
     e.stopPropagation();
-    const nameEl = document.getElementById('server-add-name') as HTMLInputElement;
-    const urlEl = document.getElementById('server-add-url') as HTMLInputElement;
-    const keyEl = document.getElementById('server-add-key') as HTMLInputElement;
-    if (urlEl.value.trim()) {
-      post({ type: 'addLocalProvider', name: nameEl.value, url: urlEl.value, apiKey: keyEl.value.trim() || undefined });
-      nameEl.value = '';
-      urlEl.value = '';
-      keyEl.value = '';
-    }
+    saveLocalPrompt();
   });
-  // Provider panel: tab switch, catalog search, local scan, key prompt.
-  for (const tab of ['cloud', 'local']) {
-    document.getElementById(`tab-${tab}`)!.addEventListener('click', (e) => {
+  for (const id of ['local-cancel', 'local-close']) {
+    document.getElementById(id)!.addEventListener('click', (e) => {
       e.stopPropagation();
-      selectProviderTab(tab);
+      closeLocalPrompt();
     });
   }
+  for (const id of ['local-url', 'local-name', 'local-key']) {
+    document.getElementById(id)!.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') {
+        e.preventDefault();
+        saveLocalPrompt();
+      }
+    });
+  }
+  document.getElementById('local-overlay')!.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      closeLocalPrompt();
+    }
+  });
+  // Provider panel: catalog search, local scan, key prompt.
   const catalogSearch = document.getElementById('catalog-search') as HTMLInputElement;
   catalogSearch.addEventListener('click', (e) => e.stopPropagation());
   catalogSearch.addEventListener('input', () => {
@@ -740,6 +773,20 @@ function build(): void {
       if (document.getElementById('lightbox')) {
         closeLightbox();
         return;
+      }
+      // Innermost first: a modal is on top of the menu that opened it, so
+      // Escape must dismiss the modal and leave that menu standing rather than
+      // closing the menu out from under it.
+      const overlays: Array<[string, () => void]> = [
+        ['local-overlay', closeLocalPrompt],
+        ['key-overlay', closeKeyPrompt],
+        ['server-edit-overlay', closeServerEdit],
+      ];
+      for (const [id, close] of overlays) {
+        if (!document.getElementById(id)!.classList.contains('hidden')) {
+          close();
+          return;
+        }
       }
       closeModelMenu();
       closeServerMenu();
@@ -1672,93 +1719,126 @@ function renderModelMenu(): void {
   // Models arrive grouped by provider (registry order). A header per provider
   // is what makes a mixed list readable: the same model id can appear under two
   // providers at very different prices, so the provider is not a detail.
-  let lastProvider = '';
+  const groups: Array<{ id: string; name: string; models: UiModel[] }> = [];
   for (const m of state.models) {
-    if (m.providerID !== lastProvider) {
-      lastProvider = m.providerID;
-      const head = document.createElement('div');
-      head.className = 'model-group';
-      const count = state.models.filter((x) => x.providerID === m.providerID).length;
-      head.innerHTML = `<span class="model-group-name">${escapeHtml(m.providerName)}</span><span class="model-group-count">${count}</span>`;
-      modelMenuList.appendChild(head);
+    const last = groups[groups.length - 1];
+    if (last && last.id === m.providerID) {
+      last.models.push(m);
+    } else {
+      groups.push({ id: m.providerID, name: m.providerName, models: [m] });
     }
-    const row = document.createElement('div');
-    row.className = 'model-row' + (m.id === state.currentModel ? ' active' : '');
-    const loading = state.loadingModels.has(m.id);
-    const caps = [
-      m.vision ? `<span class="model-cap" title="Vision">${icon.eye}</span>` : '',
-      m.toolUse ? `<span class="model-cap" title="Tool use">${icon.wrench}</span>` : '',
-    ].join('');
-    // Local models report what they're loaded with; cloud models only have the
-    // window the catalog declares. Price is shown where there is one — with
-    // your own key, what a model costs is part of choosing it.
-    const ctx = m.lifecycle
-      ? m.loaded
-        ? `${formatTokens(m.contextLength || 0)} / ${formatTokens(m.maxContextLength || 0)}`
-        : `max ${formatTokens(m.maxContextLength || 0)}`
-      : m.maxContextLength
-        ? `${formatTokens(m.maxContextLength)} ctx`
-        : '';
-    const price = formatPrice(m);
-    const meta = [m.loaded ? 'loaded' : '', ctx, price].filter(Boolean).join(' · ');
-    // Identity line: publisher / format / quant — the fields that tell apart
-    // same-named models. Only shown when present.
-    const ident = modelIdentity(m);
-    // Disambiguate the name itself when it isn't unique *within its provider*.
-    const siblings = state.models.filter((x) => x.providerID === m.providerID);
-    const tag = modelDisambiguator(m, siblings);
-    // An id tag is long and case-sensitive; a publisher tag is a short label.
-    const tagIsId = tag === m.id;
-    const nameTag = tag
-      ? `<span class="model-name">${escapeHtml(m.name)}</span><span class="model-pub-tag${tagIsId ? ' id' : ''}">${escapeHtml(tag)}</span>`
-      : `<span class="model-name">${escapeHtml(m.name)}</span>`;
-    row.innerHTML = `
-      <span class="model-dot${m.loaded ? ' loaded' : ''}"></span>
-      <span class="model-info">
-        <span class="model-name-row">${nameTag}</span>
-        ${ident ? `<span class="model-ident">${escapeHtml(ident)}</span>` : ''}
-        <span class="model-meta">${meta}${caps ? ' · <span class="model-caps">' + caps + '</span>' : ''}</span>
-      </span>
-      ${
-        // Load/eject only exists where a model lives in memory and we can drive
-        // it — LM Studio. A cloud model has no such state to control.
-        m.lifecycle
-          ? `<button class="model-action ${loading ? 'busy' : m.loaded ? 'eject' : 'load'}" aria-busy="${loading}">
-        ${loading ? `${icon.spinner}<span>${m.loaded ? 'Ejecting…' : 'Loading…'}</span>` : m.loaded ? 'Eject' : 'Load'}
-      </button>`
-          : ''
-      }`;
-    // Row click selects the model as active.
-    row.addEventListener('click', () => {
-      state.currentModel = m.id;
-      post({ type: 'selectModel', modelID: m.id });
-      renderModels();
-      renderMeter();
-      closeModelMenu();
-    });
-    // Action button loads / ejects. Loading also makes the model active (you
-    // loaded it to use it); ejecting leaves the current selection alone.
-    const action = row.querySelector('.model-action') as HTMLButtonElement | null;
-    action?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (loading) {
-        return;
-      }
-      if (!m.loaded) {
-        state.currentModel = m.id;
-        post({ type: 'selectModel', modelID: m.id });
-        renderMeter();
-        closeMenuOnLoad = true; // dismiss the menu once this load completes
-      }
-      state.loadingModels.add(m.id);
-      post({ type: m.loaded ? 'unloadModel' : 'loadModel', modelID: m.id });
-      renderModelMenu();
-    });
-    modelMenuList.appendChild(row);
+  }
+  // One provider needs no collapsing — a menu showing a single header and
+  // nothing else would be a dead end.
+  const collapsible = groups.length > 1;
+  for (const g of groups) {
+    const expanded = !collapsible || state.expandedProviders.has(g.id);
+    const head = document.createElement('div');
+    head.className = 'model-group' + (collapsible ? ' collapsible' : '') + (expanded ? ' open' : '');
+    head.innerHTML = `
+      ${collapsible ? `<span class="model-group-caret">${icon.caret}</span>` : ''}
+      <span class="model-group-name">${escapeHtml(g.name)}</span>
+      <span class="model-group-count">${g.models.length}</span>`;
+    if (collapsible) {
+      head.setAttribute('role', 'button');
+      head.setAttribute('aria-expanded', String(expanded));
+      head.title = `${expanded ? 'Collapse' : 'Expand'} ${g.name}`;
+      head.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!state.expandedProviders.delete(g.id)) {
+          state.expandedProviders.add(g.id);
+        }
+        renderModelMenu();
+      });
+    }
+    modelMenuList.appendChild(head);
+    if (!expanded) {
+      continue;
+    }
+    for (const m of g.models) {
+      modelMenuList.appendChild(buildModelRow(m));
+    }
   }
   modelMenuList.scrollTop = scrollTop;
   renderCtxPresets();
   renderEffortPresets();
+}
+
+/** One model row in the picker. */
+function buildModelRow(m: UiModel): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'model-row' + (m.id === state.currentModel ? ' active' : '');
+  const loading = state.loadingModels.has(m.id);
+  const caps = [
+    m.vision ? `<span class="model-cap" title="Vision">${icon.eye}</span>` : '',
+    m.toolUse ? `<span class="model-cap" title="Tool use">${icon.wrench}</span>` : '',
+  ].join('');
+  // Local models report what they're loaded with; cloud models only have the
+  // window the catalog declares. Price is shown where there is one — with
+  // your own key, what a model costs is part of choosing it.
+  const ctx = m.lifecycle
+    ? m.loaded
+      ? `${formatTokens(m.contextLength || 0)} / ${formatTokens(m.maxContextLength || 0)}`
+      : `max ${formatTokens(m.maxContextLength || 0)}`
+    : m.maxContextLength
+      ? `${formatTokens(m.maxContextLength)} ctx`
+      : '';
+  const price = formatPrice(m);
+  const meta = [m.loaded ? 'loaded' : '', ctx, price].filter(Boolean).join(' · ');
+  // Identity line: publisher / format / quant — the fields that tell apart
+  // same-named models. Only shown when present.
+  const ident = modelIdentity(m);
+  // Disambiguate the name itself when it isn't unique *within its provider*.
+  const siblings = state.models.filter((x) => x.providerID === m.providerID);
+  const tag = modelDisambiguator(m, siblings);
+  // An id tag is long and case-sensitive; a publisher tag is a short label.
+  const tagIsId = tag === m.id;
+  const nameTag = tag
+    ? `<span class="model-name">${escapeHtml(m.name)}</span><span class="model-pub-tag${tagIsId ? ' id' : ''}">${escapeHtml(tag)}</span>`
+    : `<span class="model-name">${escapeHtml(m.name)}</span>`;
+  row.innerHTML = `
+    <span class="model-dot${m.loaded ? ' loaded' : ''}"></span>
+    <span class="model-info">
+      <span class="model-name-row">${nameTag}</span>
+      ${ident ? `<span class="model-ident">${escapeHtml(ident)}</span>` : ''}
+      <span class="model-meta">${meta}${caps ? ' · <span class="model-caps">' + caps + '</span>' : ''}</span>
+    </span>
+    ${
+      // Load/eject only exists where a model lives in memory and we can drive
+      // it — LM Studio. A cloud model has no such state to control.
+      m.lifecycle
+        ? `<button class="model-action ${loading ? 'busy' : m.loaded ? 'eject' : 'load'}" aria-busy="${loading}">
+      ${loading ? `${icon.spinner}<span>${m.loaded ? 'Ejecting…' : 'Loading…'}</span>` : m.loaded ? 'Eject' : 'Load'}
+    </button>`
+        : ''
+    }`;
+  // Row click selects the model as active.
+  row.addEventListener('click', () => {
+    state.currentModel = m.id;
+    post({ type: 'selectModel', modelID: m.id });
+    renderModels();
+    renderMeter();
+    closeModelMenu();
+  });
+  // Action button loads / ejects. Loading also makes the model active (you
+  // loaded it to use it); ejecting leaves the current selection alone.
+  const action = row.querySelector('.model-action') as HTMLButtonElement | null;
+  action?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (loading) {
+      return;
+    }
+    if (!m.loaded) {
+      state.currentModel = m.id;
+      post({ type: 'selectModel', modelID: m.id });
+      renderMeter();
+      closeMenuOnLoad = true; // dismiss the menu once this load completes
+    }
+    state.loadingModels.add(m.id);
+    post({ type: m.loaded ? 'unloadModel' : 'loadModel', modelID: m.id });
+    renderModelMenu();
+  });
+  return row;
 }
 
 /** "$3/$15 per Mtok" for a priced model; '' for local or free ones. */
@@ -1777,14 +1857,29 @@ function formatPrice(m: UiModel): string {
 
 function renderCtxPresets(): void {
   const el = document.getElementById('ctx-presets');
+  const note = document.getElementById('ctx-note');
   if (!el) {
     return;
   }
   const m = state.models.find((x) => x.id === state.currentModel);
+  el.innerHTML = '';
+  // Only a local endpoint's window is ours to set. For a cloud model the
+  // setting never reaches the provider, so offering presets would rewrite the
+  // *local* window and restart the server for no effect — state the real
+  // number instead of a control that does nothing.
+  if (!isWindowManaged(m)) {
+    if (note) {
+      const max = m?.maxContextLength ? `${formatTokens(m.maxContextLength)} · ` : '';
+      note.textContent = `${max}set by ${m?.providerName || 'the provider'} — not adjustable from here.`;
+    }
+    return;
+  }
+  if (note) {
+    note.textContent = '';
+  }
   // Presets are filtered to the selected model's real maximum (and always
   // include the exact max), so you can never pick more than the model supports.
   const presets = contextPresets(m?.maxContextLength);
-  el.innerHTML = '';
   for (const v of presets) {
     const b = document.createElement('button');
     b.className = 'ctx-preset' + (v === state.minContext ? ' active' : '');
@@ -1817,6 +1912,14 @@ function openModelMenu(): void {
     // Tell the host to fast-refresh the list while the picker is open.
     post({ type: 'modelMenu', open: true });
   }
+  // Groups start collapsed except the one holding the current model, reseeded
+  // on every open. A picker over 300+ OpenRouter models is unusable as a flat
+  // list, but opening onto nothing but headers hides the one thing you always
+  // want to see — which model you are on. Reseeding (rather than remembering)
+  // keeps the menu the same size every time you open it.
+  state.expandedProviders = new Set(
+    state.models.filter((m) => m.id === state.currentModel).map((m) => m.providerID),
+  );
   renderModelMenu();
   modelMenu.classList.remove('hidden');
   // Anchor above the model button, opening upward.
@@ -1887,9 +1990,19 @@ function renderServerMenu(): void {
         <span class="model-name">${escapeHtml(p.name)}</span>
         <span class="model-meta">${detail} · ${STATUS_LABEL[p.status]}${models}</span>
       </span>
-      <button class="model-action provider-toggle" title="${p.enabled ? 'Disable' : 'Enable'}">${p.enabled ? 'On' : 'Off'}</button>
-      ${p.kind === 'builtin' ? '' : `<button class="model-action server-edit" title="Edit provider">${icon.pencil}</button>`}
-      ${p.kind === 'builtin' ? '' : '<button class="model-action eject" title="Remove provider">✕</button>'}`;
+      <button class="model-action provider-toggle ${p.enabled ? 'on' : 'off'}" role="switch" aria-checked="${p.enabled}" title="${p.enabled ? `Disable ${p.name} — its models leave the picker` : `Enable ${p.name}`}"><span class="toggle-track"><span class="toggle-knob"></span></span></button>
+      ${
+        // The builtin has nothing to edit or remove, but its actions still
+        // occupy the slots — otherwise its switch drifts right and no two rows
+        // line up down the column. Same markup, just hidden, so the reserved
+        // width is the button's real width and stays right if its padding or
+        // icon ever changes. (A hand-measured spacer was 4px too narrow.)
+        p.kind === 'builtin'
+          ? `<button class="model-action ghost" disabled aria-hidden="true" tabindex="-1">${icon.pencil}</button>
+             <button class="model-action ghost" disabled aria-hidden="true" tabindex="-1">✕</button>`
+          : `<button class="model-action server-edit" title="Edit provider">${icon.pencil}</button>
+             <button class="model-action eject" title="Remove provider">✕</button>`
+      }`;
     (row.querySelector('.provider-toggle') as HTMLButtonElement).addEventListener('click', (e) => {
       e.stopPropagation();
       post({ type: 'setProviderEnabled', id: p.id, enabled: !p.enabled });
@@ -1941,10 +2054,35 @@ function renderCatalog(): void {
     return;
   }
   el.innerHTML = '';
-  if (!state.catalog.length) {
-    el.innerHTML = `<div class="model-empty">No provider matches “${escapeHtml(state.catalogQuery)}”.</div>`;
-    return;
+  // One list, two kinds, because "which tab is LM Studio under?" is a question
+  // nobody should have to answer. What you click decides which form you get:
+  // keyed providers open the key prompt, local servers open the address form.
+  const query = state.catalogQuery.trim();
+  const locals = query ? state.localMatches : state.localServers;
+  // Local servers lead. The group is short and fixed (~7 rows) while the
+  // catalog runs to 40, so putting the bounded list on top keeps the local
+  // options on screen without scrolling and still starts the provider list at
+  // a predictable place. It costs nothing on a search: a query that matches a
+  // real provider almost never matches a runtime, so this group is empty then.
+  const localHead = document.createElement('div');
+  localHead.className = 'catalog-section';
+  localHead.textContent = 'Local servers — no API key';
+  el.appendChild(localHead);
+  for (const s of locals) {
+    el.appendChild(localOptionRow(s.name, s.url, s.url));
   }
+  // Always last in the group, so an address we've never heard of is never a
+  // dead end.
+  el.appendChild(localOptionRow('Custom server', '', 'Any OpenAI-compatible address'));
+  const cloudHead = document.createElement('div');
+  cloudHead.className = 'catalog-section';
+  // The local group always has a row (Custom server), so only this group can
+  // come up empty — say so in place of the heading rather than leaving a
+  // heading with nothing under it.
+  cloudHead.textContent = state.catalog.length
+    ? 'Providers — bring your own key'
+    : `No provider matches “${query}”`;
+  el.appendChild(cloudHead);
   for (const c of state.catalog) {
     const row = document.createElement('div');
     row.className = 'model-row' + (c.configured ? ' dimmed' : '');
@@ -1960,6 +2098,62 @@ function renderCatalog(): void {
     });
     el.appendChild(row);
   }
+}
+
+/** One prefill row for a local runtime; `meta` is the subtitle shown. */
+function localOptionRow(name: string, url: string, meta: string): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'model-row';
+  row.innerHTML = `
+    <span class="model-info">
+      <span class="model-name">${escapeHtml(name)}</span>
+      <span class="model-meta">${escapeHtml(meta)}</span>
+    </span>
+    <button class="model-action load">Set up</button>`;
+  (row.querySelector('.model-action') as HTMLButtonElement).addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLocalPrompt(name, url);
+  });
+  return row;
+}
+
+/**
+ * Open the local-server form, prefilled from the runtime that was picked.
+ *
+ * A modal rather than an inline pane: the panel is a popup with a bounded
+ * height, and a form living at the bottom of it is the first thing to get
+ * clipped once a few providers are configured. The address is focused and
+ * selected, not just filled — the default is loopback, and the whole point is
+ * that the server is often somewhere else.
+ */
+function openLocalPrompt(name: string, url: string): void {
+  const nameEl = document.getElementById('local-name') as HTMLInputElement;
+  const urlEl = document.getElementById('local-url') as HTMLInputElement;
+  const keyEl = document.getElementById('local-key') as HTMLInputElement;
+  document.getElementById('local-title')!.textContent = url ? `Add ${name}` : 'Add local server';
+  nameEl.value = name === 'Custom server' ? '' : name;
+  urlEl.value = url;
+  keyEl.value = '';
+  document.getElementById('local-overlay')!.classList.remove('hidden');
+  urlEl.focus();
+  urlEl.select();
+}
+
+function closeLocalPrompt(): void {
+  (document.getElementById('local-key') as HTMLInputElement).value = '';
+  document.getElementById('local-overlay')!.classList.add('hidden');
+}
+
+function saveLocalPrompt(): void {
+  const url = (document.getElementById('local-url') as HTMLInputElement).value.trim();
+  if (!url) {
+    return;
+  }
+  const name = (document.getElementById('local-name') as HTMLInputElement).value.trim();
+  const key = (document.getElementById('local-key') as HTMLInputElement).value.trim();
+  post({ type: 'addLocalProvider', name, url, apiKey: key || undefined });
+  closeLocalPrompt();
+  closeServerMenu();
 }
 
 // ---- Key prompt -------------------------------------------------------------
@@ -2122,14 +2316,6 @@ function closeOverflowMenu(): void {
 
 /** Pending catalog-search debounce (typing shouldn't queue a request per key). */
 let catalogDebounce: ReturnType<typeof setTimeout> | undefined;
-
-/** Switch the providers panel between "Add API key" and "Add local server". */
-function selectProviderTab(tab: string): void {
-  for (const t of ['cloud', 'local']) {
-    document.getElementById(`tab-${t}`)!.classList.toggle('active', t === tab);
-    document.getElementById(`add-${t}`)!.classList.toggle('hidden', t !== tab);
-  }
-}
 
 function toggleServerMenu(): void {
   if (serverMenu.classList.contains('hidden')) {
@@ -3308,8 +3494,14 @@ function handleEvent(event: OpencodeEvent): void {
       if (turnTruncated) {
         // The turn ended because it ran out of output budget, not because the
         // model was done. Say so — otherwise a cut-off reply looks like a freeze.
+        // Raising the window only helps when the window is ours to raise: we
+        // derive the output budget from it for local models only.
+        const canRaise = isWindowManaged(state.models.find((x) => x.id === state.currentModel));
         addSysChip(
-          '⚠ Response was cut off — it reached the output token limit. Raise the context window (it scales the output budget) or ask the model to be more concise.',
+          '⚠ Response was cut off — it reached the output token limit. ' +
+            (canRaise
+              ? 'Raise the context window (it scales the output budget) or ask the model to be more concise.'
+              : "The provider sets this model's output budget — ask the model to be more concise, or continue in a new message."),
         );
         turnTruncated = false;
       }
@@ -3361,6 +3553,8 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     case 'catalog':
       state.catalog = msg.providers;
       state.catalogQuery = msg.query;
+      state.localServers = msg.localServers;
+      state.localMatches = msg.localMatches;
       renderCatalog();
       break;
     case 'detectedLocal':

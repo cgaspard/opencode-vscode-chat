@@ -146,6 +146,7 @@ export interface CatalogProviderRaw {
   env?: string[];
   npm?: string;
   doc?: string;
+  api?: string;
   models?: Record<string, unknown>;
 }
 
@@ -156,7 +157,45 @@ export interface CatalogProvider {
   env: string[];
   /** Docs URL — the picker links it as "where do I get a key?". */
   doc?: string;
+  /** The provider's base URL, when the catalog publishes one. */
+  api?: string;
   modelCount: number;
+}
+
+/**
+ * Whether a catalog entry is really a *local server* rather than a keyed cloud
+ * provider — it advertises a loopback base URL (LMStudio ships as
+ * `http://127.0.0.1:1234/v1`).
+ *
+ * These entries are the reason "LM Studio" turns up under "Add API key" asking
+ * for a key that does not exist. They belong in the local-server flow, where
+ * the address is editable: the catalog's loopback default is only right when
+ * the server runs on this machine, and LM Studio or Ollama just as often lives
+ * on another box on the LAN.
+ *
+ * Note "Ollama Cloud" (`https://ollama.com/v1`) is correctly *not* local — it
+ * is a genuine hosted API that does need a key.
+ */
+export function isLocalCatalogEntry(entry: { api?: string } | undefined): boolean {
+  const api = entry?.api?.trim();
+  if (!api) {
+    return false;
+  }
+  let host: string;
+  try {
+    host = new URL(api).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  // Strip the brackets IPv6 literals carry in a URL ("[::1]").
+  host = host.replace(/^\[|\]$/g, '');
+  return (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.localhost') ||
+    /^127\./.test(host)
+  );
 }
 
 /** Normalize a raw catalog blob into sorted, displayable provider entries. */
@@ -178,10 +217,58 @@ export function catalogEntries(raw: Record<string, CatalogProviderRaw> | null | 
       name: (value.name ?? id).trim() || id,
       env: Array.isArray(value.env) ? value.env.filter((e) => typeof e === 'string') : [],
       doc: typeof value.doc === 'string' ? value.doc : undefined,
+      api: typeof value.api === 'string' ? value.api : undefined,
       modelCount: value.models && typeof value.models === 'object' ? Object.keys(value.models).length : 0,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A runtime offered as a one-click prefill in the "Add local server" tab. */
+export interface LocalServerOption {
+  name: string;
+  /** The address to start from — a default to type over, not a constraint. */
+  url: string;
+}
+
+/** "LM Studio" and "LMStudio" are the same product; compare them as one. */
+const localKey = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * The local runtimes to offer as prefills, from two sources that each miss
+ * something the other has:
+ *
+ *   - LOCAL_PROBE_TARGETS knows LM Studio, Ollama and vLLM with their real
+ *     default ports. Ollama appears *only* here — the catalog's sole Ollama
+ *     entry is "Ollama Cloud", a hosted API.
+ *   - The catalog contributes anything else shipping a loopback URL (Atomic
+ *     Chat, Lynkr, Privatemode AI, and LMStudio under its own spelling), so
+ *     the list grows on its own as models.dev adds runtimes.
+ *
+ * An empty query returns just the probe targets, the same curated-head idea as
+ * FEATURED_PROVIDER_IDS: nobody opens this panel looking for Lynkr, and a
+ * seven-row default would push the keyed providers off the bottom of the list.
+ * A query searches the merged set, so the long tail stays one search away.
+ *
+ * Probe targets win a name collision — same product, better label, and a port
+ * we maintain.
+ */
+export function knownLocalServers(entries: CatalogProvider[], query = ''): LocalServerOption[] {
+  const out: LocalServerOption[] = LOCAL_PROBE_TARGETS.map((t) => ({ name: t.name, url: t.url }));
+  const q = localKey(query);
+  if (!q) {
+    return out;
+  }
+  const seen = new Set(out.map((o) => localKey(o.name)));
+  for (const e of entries) {
+    const key = localKey(e.name);
+    if (!isLocalCatalogEntry(e) || !e.api || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({ name: e.name, url: e.api });
+  }
+  return out.filter((o) => localKey(o.name).includes(q));
 }
 
 /**

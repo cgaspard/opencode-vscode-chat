@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { getConfig } from '../config';
 import { commandTakesArgs } from '../core/commands';
 import { type AgentInfo, delegatableAgents, pickableAgents, resolveAgent } from '../core/agents';
-import { clampContext } from '../core/context';
+import { clampContext, computeWindow, isWindowManaged } from '../core/context';
 import {
   type EffortLevel,
   type ReasoningCapability,
@@ -28,15 +28,19 @@ import {
   LOCAL_PROBE_TARGETS,
   assembleModels,
   formatModelRef,
+  isLocalCatalogEntry,
   isUsable,
+  knownLocalServers,
   parseModelRef,
   pickModelRef,
   searchCatalog,
   unusableReason,
+  type LocalFlavor,
   type ProviderConnection,
 } from '../core/providers';
 import { ConnectResult, SelfHealer } from '../core/reconnect';
 import { selectionLabel } from '../core/selection';
+import { normalizeServerUrl } from '../core/url';
 import { emptySessionCandidates } from '../core/sessions';
 import { classifySkills } from '../core/skills';
 import { deriveTitle } from '../core/title';
@@ -549,11 +553,7 @@ export class ChatBridge {
           await this.applyProviderChange();
           break;
         case 'addLocalProvider':
-          await this.deps.registry.addLocal(msg.name, msg.url, {
-            apiKey: msg.apiKey,
-            flavor: msg.flavor,
-          });
-          await this.applyProviderChange();
+          await this.addLocalProvider(msg.name, msg.url, msg.apiKey, msg.flavor);
           break;
         case 'updateProvider':
           await this.deps.registry.update(msg.id, {
@@ -864,13 +864,21 @@ export class ChatBridge {
       return;
     }
     const estTokens = Math.round(bytes / 4);
-    const win = getConfig().minContextLength;
-    if (estTokens >= win * 0.4) {
+    // Measure against the window actually in force for the selected model, not
+    // the configured minimum: on a cloud model the setting is inert, and a 30k
+    // AGENTS.md would otherwise read as "94% of your context" against a window
+    // that is really 195K.
+    const model = this.lastModels.find((m) => m.id === this.currentModel);
+    const win = computeWindow(model, getConfig().minContextLength);
+    if (win > 0 && estTokens >= win * 0.4) {
       this.agentsWarned = true;
       const pct = Math.round((estTokens / win) * 100);
       const over = estTokens >= win;
+      const remedy = isWindowManaged(model)
+        ? 'Consider trimming it or raising opencodeChat.minContextLength.'
+        : 'Consider trimming it.';
       vscode.window.showWarningMessage(
-        `OpenCode Chat: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. Consider trimming it or raising opencodeChat.minContextLength.`,
+        `OpenCode Chat: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. ${remedy}`,
       );
     }
   }
@@ -1493,20 +1501,57 @@ export class ChatBridge {
     await this.postProviders(this.connected);
   }
 
+  /**
+   * Add a local endpoint, working out its flavor when the UI didn't supply one.
+   *
+   * Only the autodetect scan knows the flavor up front; a hand-typed address
+   * arrives bare, and defaulting it to 'openai-compatible' silently costs an
+   * LM Studio box on the LAN everything flavor unlocks — load/eject, automatic
+   * context management, publisher/quant/format badges. So ask the server what
+   * it is, the same way the scan does. A probe failure is not fatal: the
+   * endpoint may simply be asleep, and `addLocal` still defaults it.
+   */
+  private async addLocalProvider(
+    name: string,
+    url: string,
+    apiKey?: string,
+    flavor?: LocalFlavor,
+  ): Promise<void> {
+    let resolved = flavor;
+    if (!resolved) {
+      this.post({ type: 'status', text: `Checking ${normalizeServerUrl(url)}…` });
+      try {
+        resolved = (await detectFlavor(normalizeServerUrl(url))) ?? undefined;
+      } catch (err) {
+        logError(`detect flavor for ${url}`, err);
+      }
+      this.post({ type: 'status', text: '' });
+    }
+    await this.deps.registry.addLocal(name, url, { apiKey, flavor: resolved });
+    await this.applyProviderChange();
+  }
+
   /** Send the add-provider picker its (searchable) catalog page. */
   private async sendCatalog(query: string): Promise<void> {
     const entries = await this.deps.catalog.load();
     const configured = new Set(this.deps.registry.list().map((c) => c.providerID));
+    // Each tab lists one kind. A loopback base URL means the entry is a local
+    // server wearing a provider costume, so it is ranked out of the key-needing
+    // list entirely and offered on the local tab instead — searching "LM" under
+    // "Add API key" should not turn up something that has no API key.
+    const cloud = entries.filter((e) => !isLocalCatalogEntry(e));
     this.post({
       type: 'catalog',
       query,
-      providers: searchCatalog(entries, query).map((e) => ({
+      providers: searchCatalog(cloud, query).map((e) => ({
         id: e.id,
         name: e.name,
         doc: e.doc,
         modelCount: e.modelCount,
         configured: configured.has(e.id),
       })),
+      localServers: knownLocalServers(entries),
+      localMatches: query.trim() ? knownLocalServers(entries, query) : [],
     });
   }
 
@@ -1598,8 +1643,15 @@ export class ChatBridge {
 
   /** Persist a new context window and restart OpenCode so it takes effect. */
   private async setContextSize(tokens: number): Promise<void> {
-    // Never persist more context than the selected model actually supports.
     const model = this.lastModels.find((m) => m.id === this.currentModel);
+    // The setting only reaches local endpoints. Refuse it for a cloud model
+    // rather than rewriting the *local* window (and paying a server restart)
+    // for a change the provider will never see — the picker hides the control,
+    // so this only catches a stale webview.
+    if (!isWindowManaged(model)) {
+      return;
+    }
+    // Never persist more context than the selected model actually supports.
     const clamped = clampContext(tokens, model?.maxContextLength);
     try {
       await vscode.workspace

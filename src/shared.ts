@@ -1,9 +1,9 @@
 // Message protocol shared between the extension host and the webview.
 import type { EffortLevel, ReasoningCapability } from './core/effort';
-import type { ConnectionKind, LocalFlavor } from './core/providers';
+import type { ConnectionKind, LocalFlavor, LocalServerOption } from './core/providers';
 import type { MessageWithParts, OpencodeEvent, PermissionResponse } from './opencode/protocol';
 
-export type { ConnectionKind, EffortLevel, LocalFlavor, ReasoningCapability };
+export type { ConnectionKind, EffortLevel, LocalFlavor, LocalServerOption, ReasoningCapability };
 
 export interface UiModel {
   /** Provider-qualified reference, "<providerID>/<modelID>" — unique, and what selection stores. */
@@ -177,7 +177,17 @@ export type HostToWebview =
   | { type: 'models'; models: UiModel[]; currentModel: string | null; reason?: 'action' | 'periodic' }
   | { type: 'providers'; providers: UiProvider[]; connected: boolean }
   // Reply to searchCatalog: the matching page of the models.dev provider list.
-  | { type: 'catalog'; query: string; providers: UiCatalogProvider[] }
+  // `providers` is key-needing providers only — local runtimes are split out so
+  // each tab lists one kind. `localServers` is the full prefill list for the
+  // local tab; `localMatches` is the subset matching `query`, for the "that's a
+  // local server" hint in the API-key tab.
+  | {
+      type: 'catalog';
+      query: string;
+      providers: UiCatalogProvider[];
+      localServers: LocalServerOption[];
+      localMatches: LocalServerOption[];
+    }
   // Reply to detectLocalProviders: local servers that answered a probe.
   | { type: 'detectedLocal'; servers: UiDetectedServer[] }
   | { type: 'sessions'; sessions: UiSession[]; currentSessionID: string | null }

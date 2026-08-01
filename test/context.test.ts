@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clampContext, computeWindow, contextPresets, formatTokens } from '../src/core/context';
+import {
+  clampContext,
+  computeWindow,
+  contextPresets,
+  formatTokens,
+  isWindowManaged,
+} from '../src/core/context';
 
 test('clampContext never exceeds the model maximum', () => {
   assert.equal(clampContext(131072, 32768), 32768); // user asked for more than the model allows
@@ -43,13 +49,39 @@ test('formatTokens uses 1024-base so 32768 reads as 32K (the old 33K bug)', () =
   assert.equal(formatTokens(-5), '0');
 });
 
-test('computeWindow shows the loaded window when a model is loaded', () => {
-  assert.equal(computeWindow({ contextLength: 8192, maxContextLength: 32768 }, 131072), 8192);
+// Only a local endpoint takes our window: minContextLength reaches a model
+// solely via the declaration serverManager builds for a local provider (and LM
+// Studio's load). Builtin/catalog models run the provider's own window.
+test('isWindowManaged is true only for a local endpoint', () => {
+  assert.equal(isWindowManaged({ providerKind: 'local' }), true);
+  assert.equal(isWindowManaged({ providerKind: 'catalog' }), false);
+  assert.equal(isWindowManaged({ providerKind: 'builtin' }), false);
+  assert.equal(isWindowManaged({}), false); // unknown kind: assume not ours
+  assert.equal(isWindowManaged(undefined), false);
 });
 
-test('computeWindow uses min(configured, model max) when not loaded', () => {
-  assert.equal(computeWindow({ maxContextLength: 32768 }, 131072), 32768); // capped by model
-  assert.equal(computeWindow({ maxContextLength: 131072 }, 32768), 32768); // capped by setting
+test('computeWindow shows the loaded window when a model is loaded', () => {
+  assert.equal(
+    computeWindow({ contextLength: 8192, maxContextLength: 32768, providerKind: 'local' }, 131072),
+    8192,
+  );
+});
+
+test('computeWindow uses min(configured, model max) for a local model', () => {
+  const local = 'local' as const;
+  // capped by the model
+  assert.equal(computeWindow({ maxContextLength: 32768, providerKind: local }, 131072), 32768);
+  // capped by the setting
+  assert.equal(computeWindow({ maxContextLength: 131072, providerKind: local }, 32768), 32768);
+});
+
+// The bug this guards: a 195K Zen model metered against a 32K setting we never
+// send would show the bar full at 13k tokens.
+test('computeWindow ignores the setting for a provider-managed model', () => {
+  assert.equal(computeWindow({ maxContextLength: 199680, providerKind: 'builtin' }, 32768), 199680);
+  assert.equal(computeWindow({ maxContextLength: 131072, providerKind: 'catalog' }, 8192), 131072);
+  // Unknown kind is treated as provider-managed, not ours to shrink.
+  assert.equal(computeWindow({ maxContextLength: 131072 }, 32768), 131072);
 });
 
 test('computeWindow falls back to the configured window without model metadata', () => {
