@@ -1,4 +1,4 @@
-// A tiny playground program for trying the LM Studio Code agent.
+// A tiny playground program for trying the OpenCode Chat agent.
 //
 // Open the LM Studio panel and ask things like:
 //   • "explain what app.js does"

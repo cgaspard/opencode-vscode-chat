@@ -6,9 +6,9 @@
 // ~11k-token default — a better fit for small local context windows.
 
 const IDENTITY =
-  'You are LM Studio Code, a local AI coding assistant. You run entirely on the ' +
+  'You are OpenCode Chat, a local AI coding assistant. You run entirely on the ' +
   "user's own machine via LM Studio and the open-source OpenCode agent runtime. " +
-  'Your name is LM Studio Code; never refer to yourself as "opencode".';
+  'Your name is OpenCode Chat; never refer to yourself as "opencode".';
 
 export const BUILD_PROMPT = `${IDENTITY}
 

@@ -1,8 +1,8 @@
 {
-  "name": "lmstudio-code",
-  "displayName": "LM Studio Code",
-  "description": "Agentic coding panel for your local LM Studio models. A Claude Code / Codex\u2013style chat experience powered by the open-source OpenCode agent, running entirely against your local models.",
-  "version": "0.16.0",
+  "name": "opencode-chat",
+  "displayName": "OpenCode Chat",
+  "description": "Bring your own models: an agentic coding panel powered by the open-source OpenCode agent. Add API keys for Anthropic, OpenAI, Google, OpenRouter and 170+ more, and/or point it at a local LM Studio, Ollama or vLLM server.",
+  "version": "0.1.0",
   "publisher": "cgaspard",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -15,23 +15,26 @@
     "Chat"
   ],
   "keywords": [
-    "lm studio",
-    "lmstudio",
     "opencode",
     "agent",
+    "byok",
+    "anthropic",
+    "openai",
+    "openrouter",
+    "lm studio",
+    "ollama",
     "local llm",
     "claude code",
-    "codex",
-    "byom"
+    "codex"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/cgaspard/lmstudio-vscode-chat"
+    "url": "https://github.com/cgaspard/opencode-vscode-chat"
   },
   "bugs": {
-    "url": "https://github.com/cgaspard/lmstudio-vscode-chat/issues"
+    "url": "https://github.com/cgaspard/opencode-vscode-chat/issues"
   },
-  "homepage": "https://github.com/cgaspard/lmstudio-vscode-chat#readme",
+  "homepage": "https://github.com/cgaspard/opencode-vscode-chat#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -40,141 +43,143 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "lmstudioCode",
-          "title": "LM Studio",
+          "id": "opencodeChat",
+          "title": "OpenCode Chat",
           "icon": "media/activity-icon.svg",
-          "when": "lmstudioCode:doesNotSupportSecondarySidebar"
+          "when": "opencodeChat:doesNotSupportSecondarySidebar"
         }
       ],
       "secondarySidebar": [
         {
-          "id": "lmstudioCodeSecondary",
-          "title": "LM Studio",
+          "id": "opencodeChatSecondary",
+          "title": "OpenCode Chat",
           "icon": "media/activity-icon.svg",
-          "when": "!lmstudioCode:doesNotSupportSecondarySidebar"
+          "when": "!opencodeChat:doesNotSupportSecondarySidebar"
         }
       ]
     },
     "views": {
-      "lmstudioCode": [
+      "opencodeChat": [
         {
-          "id": "lmstudioCode.chat",
-          "name": "LM Studio",
+          "id": "opencodeChat.chat",
+          "name": "OpenCode Chat",
           "type": "webview",
-          "when": "lmstudioCode:doesNotSupportSecondarySidebar"
+          "when": "opencodeChat:doesNotSupportSecondarySidebar"
         }
       ],
-      "lmstudioCodeSecondary": [
+      "opencodeChatSecondary": [
         {
-          "id": "lmstudioCode.chatSecondary",
-          "name": "LM Studio",
+          "id": "opencodeChat.chatSecondary",
+          "name": "OpenCode Chat",
           "type": "webview",
-          "when": "!lmstudioCode:doesNotSupportSecondarySidebar"
+          "when": "!opencodeChat:doesNotSupportSecondarySidebar"
         }
       ]
     },
     "commands": [
       {
-        "command": "lmstudioCode.newChat",
-        "title": "LM Studio Code: New Chat",
+        "command": "opencodeChat.newChat",
+        "title": "OpenCode Chat: New Chat",
         "icon": "$(add)"
       },
       {
-        "command": "lmstudioCode.openInTab",
-        "title": "LM Studio Code: Open Chat in Editor Tab",
+        "command": "opencodeChat.openInTab",
+        "title": "OpenCode Chat: Open Chat in Editor Tab",
         "icon": "$(window)"
       },
       {
-        "command": "lmstudioCode.history",
-        "title": "LM Studio Code: Session History",
+        "command": "opencodeChat.history",
+        "title": "OpenCode Chat: Session History",
         "icon": "$(history)"
       },
       {
-        "command": "lmstudioCode.restartServer",
-        "title": "LM Studio Code: Restart OpenCode Server"
+        "command": "opencodeChat.restartServer",
+        "title": "OpenCode Chat: Restart OpenCode Server"
       },
       {
-        "command": "lmstudioCode.showLogs",
-        "title": "LM Studio Code: Show Logs"
+        "command": "opencodeChat.showLogs",
+        "title": "OpenCode Chat: Show Logs"
       },
       {
-        "command": "lmstudioCode.focus",
-        "title": "LM Studio Code: Focus Chat"
+        "command": "opencodeChat.focus",
+        "title": "OpenCode Chat: Focus Chat"
       }
     ],
     "configuration": {
-      "title": "LM Studio Code",
+      "title": "OpenCode Chat",
       "properties": {
-        "lmstudioCode.lmStudioBaseUrl": {
-          "type": "string",
-          "default": "http://127.0.0.1:1234/v1",
-          "description": "Base URL of the LM Studio OpenAI-compatible server (must end in /v1)."
+        "opencodeChat.autoDetectLocalServers": {
+          "type": "boolean",
+          "default": true,
+          "description": "On first run, probe the well-known local inference ports (LM Studio 1234, Ollama 11434, vLLM 8000) and offer any that answer as a ready-to-add provider. Purely local loopback requests; nothing is added without your confirmation."
         },
-        "lmstudioCode.opencodePath": {
+        "opencodeChat.opencodePath": {
           "type": "string",
           "default": "",
           "description": "Override path to an opencode binary. Leave empty to use your own install (PATH, ~/.opencode/bin/opencode) if present, otherwise the binary bundled with this extension."
         },
-        "lmstudioCode.serverPort": {
+        "opencodeChat.serverPort": {
           "type": "number",
           "default": 0,
           "description": "Port for the embedded OpenCode server. 0 = pick a free port automatically."
         },
-        "lmstudioCode.defaultModel": {
+        "opencodeChat.defaultModel": {
           "type": "string",
           "default": "",
-          "description": "Model id to select by default (must match an LM Studio model id). Empty = first available."
+          "markdownDescription": "Model to select by default, as `provider/model` (e.g. `anthropic/claude-sonnet-4-6`, or `my-lmstudio/qwen3-coder-30b` for a local endpoint). A bare model id matches that model under any configured provider. Empty = first available."
         },
-        "lmstudioCode.agent": {
+        "opencodeChat.agent": {
           "type": "string",
           "default": "build",
           "description": "Agent to select by default. 'build' edits your code; 'plan' is read-only. Any agent you define in .opencode/agent/*.md (or ~/.config/opencode/agent/) can also be named here \u2014 it appears in the picker after the OpenCode server restarts."
         },
-        "lmstudioCode.autoEnsureContext": {
+        "opencodeChat.autoEnsureContext": {
           "type": "boolean",
           "default": true,
-          "description": "Before prompting, ensure the selected LM Studio model is loaded with an adequate context length (uses the lms CLI). Prevents the 'tokens to keep > context length' error from small default context windows."
+          "description": "For LM Studio endpoints only: before prompting, ensure the selected model is loaded with an adequate context length (via LM Studio's REST API, falling back to the lms CLI). Prevents the 'tokens to keep > context length' error from small default context windows. Ignored for cloud providers and for non-LM-Studio endpoints, which manage their own context."
         },
-        "lmstudioCode.minContextLength": {
+        "opencodeChat.minContextLength": {
           "type": "number",
           "default": 32768,
-          "description": "Minimum context length to (re)load models with when autoEnsureContext is enabled. OpenCode's agent system prompt + tools alone use ~11k tokens, so keep this comfortably large."
+          "description": "Minimum context length to (re)load LM Studio models with when autoEnsureContext is enabled. OpenCode's agent system prompt + tools alone use ~11k tokens, so keep this comfortably large."
         },
-        "lmstudioCode.defaultThinkingEffort": {
+        "opencodeChat.defaultThinkingEffort": {
           "type": "string",
           "enum": [
             "auto",
             "off",
             "low",
             "medium",
-            "high"
+            "high",
+            "max"
           ],
           "default": "auto",
           "enumDescriptions": [
             "Use each model's own default reasoning behavior",
-            "Suppress reasoning entirely (sends reasoning_effort: none)",
+            "Suppress reasoning entirely",
             "Minimal reasoning",
             "Moderate reasoning",
-            "Maximum reasoning"
+            "Deep reasoning",
+            "Deepest reasoning the model offers"
           ],
-          "description": "Starting reasoning effort for models you haven't set one for. Models that report only on/off reasoning collapse low/medium/high to a single 'On'; models reporting no reasoning support hide the control entirely."
+          "description": "Starting reasoning effort for models you haven't set one for. Each model only offers the levels it actually declares (Anthropic exposes low/medium/high/max, OpenAI medium/high/xhigh, most local models on/off), and the picker snaps this preference to the nearest level the selected model supports. Models with no reasoning support hide the control entirely."
         },
-        "lmstudioCode.gpuOffload": {
+        "opencodeChat.gpuOffload": {
           "type": "string",
           "default": "max",
-          "description": "GPU offload ratio passed to 'lms load' when reloading a model for context (off | max | 0..1)."
+          "description": "LM Studio endpoints only: GPU offload ratio passed to 'lms load' when reloading a model for context (off | max | 0..1)."
         },
-        "lmstudioCode.healthCheckSeconds": {
+        "opencodeChat.healthCheckSeconds": {
           "type": "number",
           "default": 30,
           "minimum": 5,
           "maximum": 600,
-          "description": "How often (seconds) to check that LM Studio is reachable and refresh model state while connected. While disconnected the extension retries every 5 seconds regardless, and the model list refreshes immediately whenever the model picker is open. Lower values react faster but add more requests to LM Studio's server log. Takes effect within one poll cycle."
+          "description": "How often (seconds) to re-probe your local endpoints and refresh model state while connected. Cloud providers are not polled — they are reachable whenever a key is stored. While disconnected the extension retries every 5 seconds regardless, and the model list refreshes immediately whenever the model picker is open. Takes effect within one poll cycle."
         },
-        "lmstudioCode.mcpServers": {
+        "opencodeChat.mcpServers": {
           "type": "object",
           "default": {},
-          "markdownDescription": "MCP (Model Context Protocol) servers to make available to the agent, as a map of `name \u2192 server`. Each server is either a local (stdio) command or a remote (http/sse) URL.\n\nServers configured for **Claude Code** (`.mcp.json` at the workspace root) and **VS Code Copilot** (`.vscode/mcp.json` and the user `mcp` setting) are also discovered automatically \u2014 use this setting to add servers specific to LM Studio Code, or to override a discovered one. Entries here take precedence on a name collision.\n\nLocal (stdio) example:\n```json\n{\n  \"playwright\": { \"command\": \"npx\", \"args\": [\"-y\", \"@playwright/mcp@latest\"] }\n}\n```\nRemote (http/sse) example:\n```json\n{\n  \"docs\": { \"type\": \"http\", \"url\": \"https://example.com/mcp\", \"headers\": { \"Authorization\": \"Bearer ${MY_TOKEN}\" } }\n}\n```\n`${VAR}` references are resolved from the environment before launch. Set `\"enabled\": false` to keep a server defined but off. Note: each MCP server adds its tool schemas to the model's context, which is limited on local models \u2014 enable only what you need.",
+          "markdownDescription": "MCP (Model Context Protocol) servers to make available to the agent, as a map of `name \u2192 server`. Each server is either a local (stdio) command or a remote (http/sse) URL.\n\nServers configured for **Claude Code** (`.mcp.json` at the workspace root) and **VS Code Copilot** (`.vscode/mcp.json` and the user `mcp` setting) are also discovered automatically \u2014 use this setting to add servers specific to OpenCode Chat, or to override a discovered one. Entries here take precedence on a name collision.\n\nLocal (stdio) example:\n```json\n{\n  \"playwright\": { \"command\": \"npx\", \"args\": [\"-y\", \"@playwright/mcp@latest\"] }\n}\n```\nRemote (http/sse) example:\n```json\n{\n  \"docs\": { \"type\": \"http\", \"url\": \"https://example.com/mcp\", \"headers\": { \"Authorization\": \"Bearer ${MY_TOKEN}\" } }\n}\n```\n`${VAR}` references are resolved from the environment before launch. Set `\"enabled\": false` to keep a server defined but off. Note: each MCP server adds its tool schemas to the model's context, which is limited on local models \u2014 enable only what you need.",
           "additionalProperties": {
             "type": "object",
             "properties": {

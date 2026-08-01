@@ -53,7 +53,7 @@ import {
 /**
  * Health poll cadence while disconnected (ms). Kept fast so a restarted
  * LM Studio is picked up promptly; the *connected* cadence is the configurable
- * `lmstudioCode.healthCheckSeconds` (default 30s) — issue #7: a healthy idle
+ * `opencodeChat.healthCheckSeconds` (default 30s) — issue #7: a healthy idle
  * panel shouldn't flood LM Studio's developer log with model queries.
  */
 const OFFLINE_HEALTH_INTERVAL_MS = 5000;
@@ -68,9 +68,9 @@ const PICKER_REFRESH_MS = 4000;
  */
 const OFFLINE_AFTER_TIMEOUTS = 3;
 /** globalState flag: the one-time empty-session migration has already run. */
-const PRUNED_EMPTIES_KEY = 'lmstudioCode.prunedEmptySessions';
+const PRUNED_EMPTIES_KEY = 'opencodeChat.prunedEmptySessions';
 /** workspaceState key: the last active session, restored on the next launch. */
-const LAST_SESSION_KEY = 'lmstudioCode.lastSessionID';
+const LAST_SESSION_KEY = 'opencodeChat.lastSessionID';
 /**
  * Window-scoped claim so only the FIRST bridge to initialize (in practice the
  * sidebar view on launch) restores the persisted session — every panel shares
@@ -450,7 +450,7 @@ export class ChatBridge {
           break;
         case 'selectModel':
           this.currentModel = msg.modelID;
-          await this.deps.context.workspaceState.update('lmstudioCode.model', msg.modelID);
+          await this.deps.context.workspaceState.update('opencodeChat.model', msg.modelID);
           break;
         case 'loadModel':
           await this.handleLoadModel(msg.modelID);
@@ -556,7 +556,7 @@ export class ChatBridge {
           await this.openFile(msg.path);
           break;
         case 'openInTab':
-          await vscode.commands.executeCommand('lmstudioCode.openInTab');
+          await vscode.commands.executeCommand('opencodeChat.openInTab');
           break;
         case 'requestMcpStatus':
           await this.sendMcpStatus();
@@ -706,7 +706,7 @@ export class ChatBridge {
     this.client = started.client;
 
     const models = await this.loadModels();
-    const stored = this.deps.context.workspaceState.get<string>('lmstudioCode.model');
+    const stored = this.deps.context.workspaceState.get<string>('opencodeChat.model');
     // The live in-session selection wins over configuration: a self-heal
     // reconnect mid-conversation must never silently switch the user's model
     // back to defaultModel. defaultModel only decides on a fresh panel.
@@ -799,7 +799,7 @@ export class ChatBridge {
       const pct = Math.round((estTokens / win) * 100);
       const over = estTokens >= win;
       vscode.window.showWarningMessage(
-        `LM Studio Code: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. Consider trimming it or raising lmstudioCode.minContextLength.`,
+        `OpenCode Chat: ${found.join(' + ')} is ~${Math.round(estTokens / 1000)}k tokens (~${pct}% of your ${Math.round(win / 1000)}k context)${over ? ' — larger than the context window' : ''}. It's auto-included on every request and may crowd out the conversation. Consider trimming it or raising opencodeChat.minContextLength.`,
       );
     }
   }
@@ -1087,7 +1087,7 @@ export class ChatBridge {
 
   /** The user-facing identity override (shared by sends + goal continues). */
   private identitySystem(): string {
-    return 'You are "LM Studio Code", an agentic coding assistant running on the user\'s machine against their local LM Studio models. If asked your name or what you are, identify as "LM Studio Code". Never identify yourself as "opencode".';
+    return 'You are "OpenCode Chat", an agentic coding assistant running on the user\'s machine against their local LM Studio models. If asked your name or what you are, identify as "OpenCode Chat". Never identify yourself as "opencode".';
   }
 
   /** The goal directive appended to the agent's system prompt while active. */
@@ -1400,7 +1400,7 @@ export class ChatBridge {
     const clamped = clampContext(tokens, model?.maxContextLength);
     try {
       await vscode.workspace
-        .getConfiguration('lmstudioCode')
+        .getConfiguration('opencodeChat')
         .update('minContextLength', clamped, vscode.ConfigurationTarget.Global);
     } catch (err) {
       logError('update minContextLength', err);

@@ -15,7 +15,7 @@
  *   1. `.mcp.json` at the workspace root      — the Claude Code project format
  *   2. `.vscode/mcp.json` at the workspace     — the VS Code workspace format
  *   3. VS Code user settings `mcp.servers`     — the VS Code user format
- *   4. `lmstudioCode.mcpServers` setting       — our own explicit override
+ *   4. `opencodeChat.mcpServers` setting       — our own explicit override
  *
  * This file is pure (no vscode / no fs / no logger): it takes already-read
  * source objects and returns the merged OpenCode map, so it is fully
@@ -76,7 +76,7 @@ export interface DiscoveredSources {
   vscodeWorkspace?: unknown;
   /** VS Code user setting `mcp` value: `{ servers: {...} }` (or just a map). */
   vscodeUser?: unknown;
-  /** Our own `lmstudioCode.mcpServers` setting: a map of name -> entry. */
+  /** Our own `opencodeChat.mcpServers` setting: a map of name -> entry. */
   explicit?: unknown;
 }
 

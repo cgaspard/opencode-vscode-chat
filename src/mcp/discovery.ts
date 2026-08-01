@@ -8,7 +8,7 @@
  *   1. `<workspace>/.mcp.json`        — Claude Code project format ({ mcpServers })
  *   2. `<workspace>/.vscode/mcp.json` — VS Code workspace format  ({ servers })
  *   3. VS Code user setting `mcp`     — VS Code user format        ({ servers })
- *   4. `lmstudioCode.mcpServers`      — our own explicit override   (map or {servers})
+ *   4. `opencodeChat.mcpServers`      — our own explicit override   (map or {servers})
  *
  * Sources 1–3 mean a user who already configured MCP for Claude Code or VS Code
  * Copilot gets those servers for free, with nothing to re-enter.
@@ -41,7 +41,7 @@ function readJson(file: string): unknown {
     // rather than silently dropping their servers.
     logError(`mcp: ${file} is not valid JSON — ignoring`, err);
     vscode.window.showWarningMessage(
-      `LM Studio Code: ${vscode.workspace.asRelativePath(file)} is not valid JSON; its MCP servers were ignored.`,
+      `OpenCode Chat: ${vscode.workspace.asRelativePath(file)} is not valid JSON; its MCP servers were ignored.`,
     );
     return undefined;
   }
@@ -80,7 +80,7 @@ export function discoverMcpServers(): McpDiscovery {
   // Our own explicit setting (highest precedence): a map of name -> entry, or a
   // { servers: {...} } / { mcpServers: {...} } wrapper.
   try {
-    sources.explicit = vscode.workspace.getConfiguration('lmstudioCode').get('mcpServers');
+    sources.explicit = vscode.workspace.getConfiguration('opencodeChat').get('mcpServers');
   } catch {
     // absent — fine
   }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generate a 256x256 PNG icon for LM Studio Code. Pure Node, no deps.
+// Generate a 256x256 PNG icon for OpenCode Chat. Pure Node, no deps.
 //
 // Design: a family member of the vscode-debug-mcp icon — deep slate
 // rounded square with a soft radial glow, cyan circuit-trace antennae that

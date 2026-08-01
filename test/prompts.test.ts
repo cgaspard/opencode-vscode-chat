@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BUILD_PROMPT, PLAN_PROMPT } from '../src/opencode/prompts';
 
-// Identity override: both agents must claim "LM Studio Code", never "opencode" —
+// Identity override: both agents must claim "OpenCode Chat", never "opencode" —
 // otherwise local models introduce themselves as opencode (the whole reason we
 // replace the default agent prompt).
-test('both prompts assert the LM Studio Code identity and disclaim opencode', () => {
+test('both prompts assert the OpenCode Chat identity and disclaim opencode', () => {
   for (const p of [BUILD_PROMPT, PLAN_PROMPT]) {
-    assert.match(p, /LM Studio Code/);
+    assert.match(p, /OpenCode Chat/);
     assert.match(p, /never refer to yourself as "opencode"/i);
   }
 });

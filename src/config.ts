@@ -29,7 +29,7 @@ export interface ExtensionConfig {
 }
 
 export function getConfig(): ExtensionConfig {
-  const cfg = vscode.workspace.getConfiguration('lmstudioCode');
+  const cfg = vscode.workspace.getConfiguration('opencodeChat');
   let baseUrl = (cfg.get<string>('lmStudioBaseUrl') ?? 'http://127.0.0.1:1234/v1').trim();
   baseUrl = baseUrl.replace(/\/+$/, '');
   if (!/\/v\d+$/.test(baseUrl)) {

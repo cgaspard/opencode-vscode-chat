@@ -252,7 +252,7 @@ function build(): void {
     <div id="messages" class="messages">
       <div id="welcome" class="welcome">
         <div class="welcome-logo">${icon.sparkLarge}</div>
-        <div class="welcome-title">LM Studio Code</div>
+        <div class="welcome-title">OpenCode Chat</div>
         <div class="welcome-sub">Local agentic coding, powered by OpenCode.</div>
         <div class="welcome-hint">Pick a model below and describe a task.</div>
       </div>
@@ -942,7 +942,7 @@ function showMcpStatus(servers: UiMcpServer[]): void {
   if (!servers.length) {
     el.innerHTML =
       '<div class="mcp-head">MCP servers</div>' +
-      '<div class="mcp-empty">No MCP servers configured. Add one in the <code>lmstudioCode.mcpServers</code> setting, ' +
+      '<div class="mcp-empty">No MCP servers configured. Add one in the <code>opencodeChat.mcpServers</code> setting, ' +
       'or a <code>.mcp.json</code> / <code>.vscode/mcp.json</code> file in your workspace.</div>';
     messagesEl.appendChild(el);
     toggleWelcome();

@@ -1,6 +1,6 @@
 # Sample Workspace
 
-A throwaway Node.js project for trying out **LM Studio Code**. When you press
+A throwaway Node.js project for trying out **OpenCode Chat**. When you press
 F5 in the extension repo, the Extension Development Host opens *this* folder so
 the agent has real files to read, edit, and run.
 

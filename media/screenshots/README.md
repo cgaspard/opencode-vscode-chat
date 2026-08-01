@@ -4,7 +4,7 @@ Drop PNGs here with these exact filenames — the main `README.md` references th
 
 | File | What to capture |
 | --- | --- |
-| `panel.png` | **Hero shot.** The LM Studio Code panel docked in the secondary side bar next to Claude Code / Codex, mid-conversation. This is the one that sells it. |
+| `panel.png` | **Hero shot.** The OpenCode Chat panel docked in the secondary side bar next to Claude Code / Codex, mid-conversation. This is the one that sells it. |
 | `chat.png` | A streaming/finished answer showing the **agent timeline** — Thinking step, a couple of tool steps (read/write/bash), the response, and the **context meter** above the composer. |
 | `models.png` | The **model menu** open (click the model name in the composer) showing loaded ● / idle ○ models with **Load** / **Eject** buttons. |
 | `history.png` | The **session history** overlay (clock icon) with a few auto-titled sessions. |

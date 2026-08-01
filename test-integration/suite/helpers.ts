@@ -7,17 +7,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Open the chat panel and wait for the webview to boot + register itself. */
 export async function openPanel(): Promise<void> {
-  await vscode.commands.executeCommand('lmstudioCode._test.openPanel');
+  await vscode.commands.executeCommand('opencodeChat._test.openPanel');
   await sleep(800); // let the webview script load and install its test hook
 }
 
 /** Inject a host->webview message (drives the fake event stream). */
 export async function post(msg: HostToWebview | Record<string, unknown>): Promise<void> {
-  await vscode.commands.executeCommand('lmstudioCode._test.post', msg);
+  await vscode.commands.executeCommand('opencodeChat._test.post', msg);
 }
 
 async function exec(op: Record<string, unknown>): Promise<any> {
-  return vscode.commands.executeCommand('lmstudioCode._test.exec', op);
+  return vscode.commands.executeCommand('opencodeChat._test.exec', op);
 }
 
 /** Number of elements matching a selector. */

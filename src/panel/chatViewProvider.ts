@@ -32,7 +32,7 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>LM Studio Code</title>
+  <title>OpenCode Chat</title>
 </head>
 <body>
   <div id="app"></div>
@@ -43,7 +43,7 @@ function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
 
 /** Sidebar (Activity Bar) webview view. */
 export class ChatViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'lmstudioCode.chat';
+  public static readonly viewType = 'opencodeChat.chat';
   private bridge: ChatBridge | undefined;
 
   constructor(
@@ -86,8 +86,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 /** Open the chat as an editor tab (parallel conversation). */
 export function openChatPanel(extensionUri: vscode.Uri, deps: BridgeDeps): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
-    'lmstudioCode.chatPanel',
-    'LM Studio Code',
+    'opencodeChat.chatPanel',
+    'OpenCode Chat',
     vscode.ViewColumn.Active,
     {
       enableScripts: true,
@@ -98,7 +98,7 @@ export function openChatPanel(extensionUri: vscode.Uri, deps: BridgeDeps): vscod
   panel.webview.html = getHtml(panel.webview, extensionUri);
   const bridge = new ChatBridge(panel.webview, deps);
   bridge.setTitleSink((t) => {
-    panel.title = t ? `LM Studio · ${t}` : 'LM Studio Code';
+    panel.title = t ? `LM Studio · ${t}` : 'OpenCode Chat';
   });
   bridge.setVisible(panel.visible);
   panel.onDidChangeViewState(() => bridge.setVisible(panel.visible));

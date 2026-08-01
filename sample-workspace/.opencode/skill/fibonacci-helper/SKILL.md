@@ -5,7 +5,7 @@ description: Use when the user asks to optimize, explain, test, or rewrite the F
 
 # Fibonacci helper
 
-This sample skill demonstrates how OpenCode skills work in LM Studio Code /
+This sample skill demonstrates how OpenCode skills work in OpenCode Chat /
 Ollama Code. When the model decides this skill is relevant (based on the
 `description` above), it loads this body into context to guide its work.
 

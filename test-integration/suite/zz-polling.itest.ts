@@ -127,10 +127,10 @@ describe('polling e2e (issue #7)', function () {
     await fake.start();
     // 5s connected cadence (the minimum) so cadence assertions run fast.
     await vscode.workspace
-      .getConfiguration('lmstudioCode')
+      .getConfiguration('opencodeChat')
       .update('healthCheckSeconds', 5, vscode.ConfigurationTarget.Global);
     restore = await vscode.commands.executeCommand(
-      'lmstudioCode._test.useServer',
+      'opencodeChat._test.useServer',
       `http://127.0.0.1:${fake.port}/v1`,
     );
     await openPanel();
@@ -145,10 +145,10 @@ describe('polling e2e (issue #7)', function () {
 
   after(async () => {
     if (restore) {
-      await vscode.commands.executeCommand('lmstudioCode._test.restoreServer', restore);
+      await vscode.commands.executeCommand('opencodeChat._test.restoreServer', restore);
     }
     await vscode.workspace
-      .getConfiguration('lmstudioCode')
+      .getConfiguration('opencodeChat')
       .update('healthCheckSeconds', undefined, vscode.ConfigurationTarget.Global);
     // Leave the fake server running: the panel's health loop lives until the
     // host exits, and a dead upstream would spam reconnect churn into teardown.

@@ -99,7 +99,7 @@ export class OpencodeServerManager {
       // unreachable in shipped builds; it only fires for a corrupt install or
       // a bad `opencodePath` override.
       throw new Error(
-        'opencode binary not found. The bundled binary may be missing or unreadable; reinstall the extension, or set "lmstudioCode.opencodePath" to a valid opencode binary.',
+        'opencode binary not found. The bundled binary may be missing or unreadable; reinstall the extension, or set "opencodeChat.opencodePath" to a valid opencode binary.',
       );
     }
     await this.prepareBundledBinary(bin);
@@ -297,7 +297,7 @@ export class OpencodeServerManager {
       logError('could not enumerate LM Studio models for config', err);
     }
     // MCP servers discovered from .mcp.json / .vscode/mcp.json / VS Code user
-    // settings / our own `lmstudioCode.mcpServers`. Tokens like ${VAR} are
+    // settings / our own `opencodeChat.mcpServers`. Tokens like ${VAR} are
     // already resolved to literals (OPENCODE_CONFIG_CONTENT is not substituted
     // by OpenCode), so what we inject is ready to spawn as-is. Their tools flow
     // through OpenCode's existing tool-call + permission machinery for free.
@@ -309,7 +309,7 @@ export class OpencodeServerManager {
     }
 
     // Override the build/plan agent prompts so the model identifies as
-    // "LM Studio Code" instead of OpenCode's built-in "You are opencode…".
+    // "OpenCode Chat" instead of OpenCode's built-in "You are opencode…".
     const config = {
       $schema: 'https://opencode.ai/config.json',
       // Let the model ask the user clarifying questions via the built-in
@@ -397,7 +397,7 @@ export class OpencodeServerManager {
 
   /**
    * Find the opencode binary, in precedence order:
-   *   1. `lmstudioCode.opencodePath` setting (explicit user override)
+   *   1. `opencodeChat.opencodePath` setting (explicit user override)
    *   2. a user's own install (~/.opencode, Homebrew, PATH) — lets power users
    *      run a newer/custom build than the one we ship
    *   3. the binary bundled in the VSIX (the guaranteed offline default)

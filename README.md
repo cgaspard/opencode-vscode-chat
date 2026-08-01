@@ -1,4 +1,4 @@
-# LM Studio Code
+# OpenCode Chat
 
 **A real coding agent in VS Code — running entirely on the models you already have in LM Studio.**
 
@@ -8,7 +8,7 @@ Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled ri
 
 ## Demo
 
-![LM Studio Code demo](media/sample.gif)
+![OpenCode Chat demo](media/sample.gif)
 
 ---
 
@@ -91,7 +91,7 @@ The panel lives in the Activity Bar (or the secondary side bar), and the compose
 - **[LM Studio](https://lmstudio.ai)** running with its local server started (default `http://127.0.0.1:1234`) and at least one chat model
 - *(recommended)* the **`lms` CLI** for automatic context-window management
 
-> **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `lmstudioCode.opencodePath`; an install on your `PATH` or in `~/.opencode/bin` is preferred over the bundled copy if present.
+> **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`; an install on your `PATH` or in `~/.opencode/bin` is preferred over the bundled copy if present.
 
 ### Beta channel
 
@@ -105,17 +105,17 @@ any time with **Switch to Release Version**.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `lmstudioCode.lmStudioBaseUrl` | `http://127.0.0.1:1234/v1` | LM Studio OpenAI-compatible base URL |
-| `lmstudioCode.opencodePath` | _(bundled)_ | Override path to an `opencode` binary; empty uses your own install (PATH / `~/.opencode`) or the bundled one |
-| `lmstudioCode.serverPort` | `0` | Embedded server port (0 = auto) |
-| `lmstudioCode.defaultModel` | _(first)_ | Default model id |
-| `lmstudioCode.agent` | `build` | `build` or `plan` |
-| `lmstudioCode.autoEnsureContext` | `true` | Reload model with adequate context before prompting |
-| `lmstudioCode.minContextLength` | `32768` | Context length to (re)load with |
-| `lmstudioCode.defaultThinkingEffort` | `auto` | Starting reasoning effort (`auto`/`off`/`low`/`medium`/`high`) for models you haven't set one for |
-| `lmstudioCode.gpuOffload` | `max` | GPU offload for `lms load` |
-| `lmstudioCode.healthCheckSeconds` | `30` | Health/model poll cadence while connected (5–600). Disconnected retries stay at 5s; the model list refreshes immediately while the model picker is open |
-| `lmstudioCode.mcpServers` | `{}` | MCP servers to expose to the agent (in addition to auto-discovered ones) |
+| `opencodeChat.lmStudioBaseUrl` | `http://127.0.0.1:1234/v1` | LM Studio OpenAI-compatible base URL |
+| `opencodeChat.opencodePath` | _(bundled)_ | Override path to an `opencode` binary; empty uses your own install (PATH / `~/.opencode`) or the bundled one |
+| `opencodeChat.serverPort` | `0` | Embedded server port (0 = auto) |
+| `opencodeChat.defaultModel` | _(first)_ | Default model id |
+| `opencodeChat.agent` | `build` | `build` or `plan` |
+| `opencodeChat.autoEnsureContext` | `true` | Reload model with adequate context before prompting |
+| `opencodeChat.minContextLength` | `32768` | Context length to (re)load with |
+| `opencodeChat.defaultThinkingEffort` | `auto` | Starting reasoning effort (`auto`/`off`/`low`/`medium`/`high`) for models you haven't set one for |
+| `opencodeChat.gpuOffload` | `max` | GPU offload for `lms load` |
+| `opencodeChat.healthCheckSeconds` | `30` | Health/model poll cadence while connected (5–600). Disconnected retries stay at 5s; the model list refreshes immediately while the model picker is open |
+| `opencodeChat.mcpServers` | `{}` | MCP servers to expose to the agent (in addition to auto-discovered ones) |
 
 ## MCP servers
 
@@ -130,9 +130,9 @@ Servers are merged from these sources, in increasing precedence (a later source 
 | 1 | `.mcp.json` at your workspace root | **Claude Code** project format | `mcpServers` |
 | 2 | `.vscode/mcp.json` in your workspace | **VS Code** workspace format | `servers` |
 | 3 | VS Code's user-level `mcp` setting | **VS Code** user format | `servers` |
-| 4 | `lmstudioCode.mcpServers` (VS Code settings) | bare map of name → server | _(the map itself)_ |
+| 4 | `opencodeChat.mcpServers` (VS Code settings) | bare map of name → server | _(the map itself)_ |
 
-If you already use MCP with Claude Code or VS Code Copilot, those servers work here with **nothing to re-enter**. Use `lmstudioCode.mcpServers` to add a server just for LM Studio Code, or to override a discovered one.
+If you already use MCP with Claude Code or VS Code Copilot, those servers work here with **nothing to re-enter**. Use `opencodeChat.mcpServers` to add a server just for OpenCode Chat, or to override a discovered one.
 
 ### Setting up a `.mcp.json` (shareable, per project)
 
@@ -197,9 +197,9 @@ Each row shows the transport (local/remote) and the command or URL it was config
 
 ### Notes
 
-- **Applying changes.** Edits to `lmstudioCode.mcpServers` (or VS Code's `mcp` setting) restart the agent automatically. Edits to the `.mcp.json` / `.vscode/mcp.json` files apply on the next **LM Studio Code: Restart OpenCode Server** (or a window reload).
-- **Mind the context window.** Each MCP server adds its tool schemas to every request. Local models have far less context than cloud ones (OpenCode's own system prompt + built-in tools already use ~11k tokens), so enable only the servers you need and raise `lmstudioCode.minContextLength` if tools start crowding out the conversation.
-- **`npx`/`uvx` on `PATH`.** Local servers launched with `npx`/`uvx` need Node and those tools on `PATH`. The extension augments `PATH` with common install locations (Homebrew, `~/.local/bin`, nvm/fnm, bun, cargo), but if a server shows as **failed**, check **LM Studio Code: Show Logs**.
+- **Applying changes.** Edits to `opencodeChat.mcpServers` (or VS Code's `mcp` setting) restart the agent automatically. Edits to the `.mcp.json` / `.vscode/mcp.json` files apply on the next **OpenCode Chat: Restart OpenCode Server** (or a window reload).
+- **Mind the context window.** Each MCP server adds its tool schemas to every request. Local models have far less context than cloud ones (OpenCode's own system prompt + built-in tools already use ~11k tokens), so enable only the servers you need and raise `opencodeChat.minContextLength` if tools start crowding out the conversation.
+- **`npx`/`uvx` on `PATH`.** Local servers launched with `npx`/`uvx` need Node and those tools on `PATH`. The extension augments `PATH` with common install locations (Homebrew, `~/.local/bin`, nvm/fnm, bun, cargo), but if a server shows as **failed**, check **OpenCode Chat: Show Logs**.
 
 ## How it works
 

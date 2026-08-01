@@ -12,9 +12,9 @@ the VS Code Marketplace (needs the `VSCE_PAT` repo secret). There is no manual
 `vsce publish` from a laptop — do **not** run it; let the Action do it so the
 GitHub Release asset and the Marketplace build are byte-identical.
 
-> Applies to both sibling extensions (`lmstudio-vscode-chat` and
+> Applies to both sibling extensions (`opencode-vscode-chat` and
 > `ollama-vscode-chat`) — the flow is identical; only the package name and
-> `lmstudioCode`/`ollamaCode` strings differ.
+> `opencodeChat`/`ollamaCode` strings differ.
 
 ## Preconditions
 

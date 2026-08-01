@@ -16,7 +16,7 @@ let server: OpencodeServerManager | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
-  log('activating LM Studio Code');
+  log('activating OpenCode Chat');
 
   const cfg = getConfig();
   const servers = new ServerRegistry(context, cfg.lmStudioBaseUrl);
@@ -41,7 +41,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (!supportsSecondarySidebar) {
     void vscode.commands.executeCommand(
       'setContext',
-      'lmstudioCode:doesNotSupportSecondarySidebar',
+      'opencodeChat:doesNotSupportSecondarySidebar',
       true,
     );
   }
@@ -51,26 +51,26 @@ export function activate(context: vscode.ExtensionContext): void {
   const providerPrimary = new ChatViewProvider(context.extensionUri, deps);
   const providerSecondary = new ChatViewProvider(context.extensionUri, deps);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('lmstudioCode.chat', providerPrimary, {
+    vscode.window.registerWebviewViewProvider('opencodeChat.chat', providerPrimary, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.window.registerWebviewViewProvider('lmstudioCode.chatSecondary', providerSecondary, {
+    vscode.window.registerWebviewViewProvider('opencodeChat.chatSecondary', providerSecondary, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
   );
   const provider = { newChat: () => { providerPrimary.newChat(); providerSecondary.newChat(); }, showHistory: () => { providerPrimary.showHistory(); providerSecondary.showHistory(); } };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('lmstudioCode.newChat', () => provider.newChat()),
-    vscode.commands.registerCommand('lmstudioCode.history', () => provider.showHistory()),
-    vscode.commands.registerCommand('lmstudioCode.focus', () =>
-      vscode.commands.executeCommand('lmstudioCode.chat.focus'),
+    vscode.commands.registerCommand('opencodeChat.newChat', () => provider.newChat()),
+    vscode.commands.registerCommand('opencodeChat.history', () => provider.showHistory()),
+    vscode.commands.registerCommand('opencodeChat.focus', () =>
+      vscode.commands.executeCommand('opencodeChat.chat.focus'),
     ),
-    vscode.commands.registerCommand('lmstudioCode.openInTab', () =>
+    vscode.commands.registerCommand('opencodeChat.openInTab', () =>
       openChatPanel(context.extensionUri, deps),
     ),
-    vscode.commands.registerCommand('lmstudioCode.showLogs', () => showLogs()),
-    vscode.commands.registerCommand('lmstudioCode.restartServer', async () => {
+    vscode.commands.registerCommand('opencodeChat.showLogs', () => showLogs()),
+    vscode.commands.registerCommand('opencodeChat.restartServer', async () => {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Restarting OpenCode server…' },
         async () => {
@@ -83,10 +83,10 @@ export function activate(context: vscode.ExtensionContext): void {
             lmStudio.setBaseUrl(active.url);
             lmStudio.setApiKey(apiKey);
             await server!.restart();
-            vscode.window.showInformationMessage('LM Studio Code: OpenCode server restarted.');
+            vscode.window.showInformationMessage('OpenCode Chat: OpenCode server restarted.');
           } catch (err) {
             vscode.window.showErrorMessage(
-              `LM Studio Code: ${err instanceof Error ? err.message : String(err)}`,
+              `OpenCode Chat: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         },
@@ -98,14 +98,14 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (
-        e.affectsConfiguration('lmstudioCode.lmStudioBaseUrl') ||
-        e.affectsConfiguration('lmstudioCode.opencodePath') ||
-        e.affectsConfiguration('lmstudioCode.serverPort') ||
+        e.affectsConfiguration('opencodeChat.lmStudioBaseUrl') ||
+        e.affectsConfiguration('opencodeChat.opencodePath') ||
+        e.affectsConfiguration('opencodeChat.serverPort') ||
         // MCP servers are baked into the injected config at spawn time, so a
         // change to ours — or VS Code's shared `mcp` setting — needs a respawn
         // to take effect. (On-disk .mcp.json / .vscode/mcp.json edits are picked
         // up by the "Restart OpenCode Server" command.)
-        e.affectsConfiguration('lmstudioCode.mcpServers') ||
+        e.affectsConfiguration('opencodeChat.mcpServers') ||
         e.affectsConfiguration('mcp')
       ) {
         log('relevant configuration changed; restarting server on next use');
@@ -120,21 +120,21 @@ export function activate(context: vscode.ExtensionContext): void {
   if (__TEST__) {
     registerTestCommands(context);
     context.subscriptions.push(
-      vscode.commands.registerCommand('lmstudioCode._test.openPanel', () => {
+      vscode.commands.registerCommand('opencodeChat._test.openPanel', () => {
         const panel = openChatPanel(context.extensionUri, deps);
         attachTestWebview(panel.webview);
       }),
       // Point the extension at a test-controlled server (the e2e polling suite
       // runs a fake LM Studio in-process). Returns what restoreServer needs to
       // undo the registry mutation so state never leaks across runs.
-      vscode.commands.registerCommand('lmstudioCode._test.useServer', async (url: string) => {
+      vscode.commands.registerCommand('opencodeChat._test.useServer', async (url: string) => {
         const prevActiveId = deps.servers.active().id;
         const added = await deps.servers.add('E2E Fake', url);
         await deps.servers.setActive(added.id);
         return { id: added.id, prevActiveId };
       }),
       vscode.commands.registerCommand(
-        'lmstudioCode._test.restoreServer',
+        'opencodeChat._test.restoreServer',
         async (state: { id: string; prevActiveId: string }) => {
           await deps.servers.setActive(state.prevActiveId);
           await deps.servers.remove(state.id);

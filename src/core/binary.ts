@@ -3,7 +3,7 @@
 // and candidate paths into this.
 
 export interface BinaryResolverInputs {
-  /** `lmstudioCode.opencodePath` setting, or '' if unset. */
+  /** `opencodeChat.opencodePath` setting, or '' if unset. */
   overridePath: string;
   /** Known user-install locations to probe, in order. */
   userCandidates: string[];

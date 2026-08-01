@@ -19,11 +19,11 @@ function genId(): string {
   return 'srv_' + Date.now().toString(36) + (counter++).toString(36);
 }
 
-const SERVERS_KEY = 'lmstudioCode.servers';
-const ACTIVE_KEY = 'lmstudioCode.activeServer';
+const SERVERS_KEY = 'opencodeChat.servers';
+const ACTIVE_KEY = 'opencodeChat.activeServer';
 
 function secretKey(id: string): string {
-  return `lmstudioCode.apiKey.${id}`;
+  return `opencodeChat.apiKey.${id}`;
 }
 
 /** Persisted registry of LM Studio servers the user can switch between. */
