@@ -34,7 +34,7 @@ describe('generation stat + reasoning collapse', function () {
       agent: 'build',
       cwd: '/tmp',
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });

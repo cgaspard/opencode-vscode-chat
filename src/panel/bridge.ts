@@ -289,8 +289,17 @@ export class ChatBridge {
     }
     if (Date.now() >= this.nextProbeDueAt) {
       const started = Date.now();
+      const before = this.probeFingerprint();
       try {
         await this.healer.tick();
+        // A per-endpoint status change that does NOT move the aggregate still
+        // matters: with a cloud provider (or the builtin) configured, a local
+        // server dying leaves us "connected" — but the user's selected model
+        // just became unusable, and their picker badge is now wrong. The healer
+        // takes no action in that case, so publish the change ourselves.
+        if (this.connected && this.probeFingerprint() !== before) {
+          await this.postProviders(this.connected);
+        }
       } finally {
         // While disconnected the next metronome tick (5s) probes again; while
         // connected wait out the configured cadence. Anchor to the tick START
@@ -1374,6 +1383,14 @@ export class ChatBridge {
       return null;
     }
     return { providerID: parsed.providerID, modelID: parsed.modelID };
+  }
+
+  /** Stable summary of the last probe results, to detect a change cheaply. */
+  private probeFingerprint(): string {
+    return [...this.lastProbes.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([id, status]) => `${id}:${status}`)
+      .join(',');
   }
 
   /** Display name of the selected model's provider, for error messages. */

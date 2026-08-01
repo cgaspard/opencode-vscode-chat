@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { decideHealthAction, HealthInputs } from '../src/core/health';
+import { aggregateUpstream, decideHealthAction, HealthInputs, ProbeStatus } from '../src/core/health';
 
 // A fully-healthy baseline; each test overrides just the fields it cares about.
 const base: HealthInputs = {
@@ -16,7 +16,7 @@ const base: HealthInputs = {
 };
 const decide = (over: Partial<HealthInputs>) => decideHealthAction({ ...base, ...over });
 
-test('LM Studio going away shows the offline banner exactly once', () => {
+test('the upstream going away shows the offline banner exactly once', () => {
   assert.equal(decide({ upstream: 'unreachable', connected: true }), 'go-offline');
   // Already offline -> keep quietly waiting, don't thrash.
   assert.equal(decide({ upstream: 'unreachable', connected: false }), 'none');
@@ -66,4 +66,53 @@ test('refreshEvery=0 disables periodic refresh entirely', () => {
 test('offline takes priority over the refresh cadence', () => {
   // Even on a refresh tick, if LM Studio is down we surface the banner.
   assert.equal(decide({ upstream: 'unreachable', connected: true, tick: 3 }), 'go-offline');
+});
+
+// ---- aggregateUpstream -----------------------------------------------------
+// One verdict for the whole provider set. The rule that matters: a cloud
+// provider with a key is available without being probed, so "offline" means
+// nothing at all can serve — not that one local server is down.
+
+test('a keyed cloud provider means online, whatever the local endpoints say', () => {
+  assert.equal(
+    aggregateUpstream({ probes: ['unreachable', 'timeout'], keyedProviders: 1, builtinEnabled: false }),
+    'ok',
+  );
+});
+
+test('the builtin alone keeps us online with no key and no local server', () => {
+  assert.equal(aggregateUpstream({ probes: [], keyedProviders: 0, builtinEnabled: true }), 'ok');
+});
+
+test('a keyless catalog provider does not count as available', () => {
+  // keyedProviders counts only those WITH a key; nothing else configured.
+  assert.equal(
+    aggregateUpstream({ probes: [], keyedProviders: 0, builtinEnabled: false }),
+    'unreachable',
+  );
+});
+
+test('with only local endpoints it reduces to the old single-server behavior', () => {
+  const local = (probes: ProbeStatus[]) =>
+    aggregateUpstream({ probes, keyedProviders: 0, builtinEnabled: false });
+  assert.equal(local(['ok']), 'ok');
+  assert.equal(local(['unreachable']), 'unreachable');
+  assert.equal(local(['timeout']), 'timeout');
+  assert.equal(local(['auth-required']), 'auth-required');
+});
+
+test('one healthy endpoint carries the rest', () => {
+  assert.equal(
+    aggregateUpstream({ probes: ['unreachable', 'ok'], keyedProviders: 0, builtinEnabled: false }),
+    'ok',
+  );
+});
+
+test('when nothing serves, the most actionable failure wins', () => {
+  const down = (probes: ProbeStatus[]) =>
+    aggregateUpstream({ probes, keyedProviders: 0, builtinEnabled: false });
+  // A rejected key is a fixable mistake, so it outranks a dead server...
+  assert.equal(down(['unreachable', 'auth-required']), 'auth-required');
+  // ...and a timeout (maybe just busy) outranks a flat refusal.
+  assert.equal(down(['unreachable', 'timeout']), 'timeout');
 });

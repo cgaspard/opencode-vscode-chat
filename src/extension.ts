@@ -123,10 +123,24 @@ export function activate(context: vscode.ExtensionContext): void {
         const panel = openChatPanel(context.extensionUri, deps);
         attachTestWebview(panel.webview);
       }),
+      // Disable every provider so the host cannot reach a model. The webview
+      // suites inject their own state and assert on it; a live provider (the
+      // builtin needs only a network) would post real model lists over those
+      // fixtures mid-assertion.
+      vscode.commands.registerCommand('opencodeChat._test.quiesceProviders', async () => {
+        for (const conn of deps.registry.list()) {
+          await deps.registry.setDisabled(conn.id, true);
+        }
+        await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
+      }),
       // Point the extension at a test-controlled endpoint (the e2e polling
-      // suite runs a fake LM Studio in-process). Returns what restoreServer
-      // needs to undo the registry mutation so state never leaks across runs.
+      // suite runs a fake LM Studio in-process) as its ONLY provider, so the
+      // upstream verdict depends solely on that server. Returns what
+      // restoreServer needs to undo the mutation so state never leaks.
       vscode.commands.registerCommand('opencodeChat._test.useServer', async (url: string) => {
+        for (const conn of deps.registry.list()) {
+          await deps.registry.setDisabled(conn.id, true);
+        }
         const added = await deps.registry.addLocal('E2E Fake', url, { flavor: 'lmstudio' });
         await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
         return { id: added.id };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lmStudioRestRoot, normalizeServerUrl } from '../src/core/url';
+import { restRoot, normalizeServerUrl } from '../src/core/url';
 
 test('normalizeServerUrl falls back to the local default on empty input', () => {
   assert.equal(normalizeServerUrl(''), 'http://127.0.0.1:1234/v1');
@@ -20,9 +20,9 @@ test('normalizeServerUrl strips trailing slashes and respects existing /vN', () 
   assert.equal(normalizeServerUrl('https://host/v2'), 'https://host/v2');
 });
 
-test('lmStudioRestRoot strips the /vN suffix to get the REST root', () => {
-  assert.equal(lmStudioRestRoot('http://host:1234/v1'), 'http://host:1234');
-  assert.equal(lmStudioRestRoot('http://host:1234/v0'), 'http://host:1234');
-  assert.equal(lmStudioRestRoot('http://host:1234'), 'http://host:1234');
-  assert.equal(lmStudioRestRoot(''), '');
+test('restRoot strips the /vN suffix to get the REST root', () => {
+  assert.equal(restRoot('http://host:1234/v1'), 'http://host:1234');
+  assert.equal(restRoot('http://host:1234/v0'), 'http://host:1234');
+  assert.equal(restRoot('http://host:1234'), 'http://host:1234');
+  assert.equal(restRoot(''), '');
 });

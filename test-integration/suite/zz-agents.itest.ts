@@ -37,7 +37,7 @@ describe('user-defined agents', function () {
       agents: PICKABLE,
       cwd: '/tmp',
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });
@@ -55,7 +55,7 @@ describe('user-defined agents', function () {
       agents: PICKABLE,
       cwd: '/tmp',
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });
@@ -109,7 +109,7 @@ describe('user-defined agents', function () {
       agents: PICKABLE,
       cwd: '/tmp',
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });
@@ -126,7 +126,7 @@ describe('user-defined agents', function () {
       agents: [],
       cwd: '/tmp',
       serverReady: false,
-      lmStudioConnected: false,
+      upstreamConnected: false, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });

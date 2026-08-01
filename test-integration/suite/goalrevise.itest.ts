@@ -6,19 +6,19 @@
 import * as assert from 'node:assert';
 import * as helpers from './helpers';
 
-const { openPanel, post, text, count, classes, click, waitFor } = helpers;
+const { openPanel, post, text, count, classes, click, waitFor, localModel, localRef } = helpers;
 
-const MODELS = [{ id: 'qwen/qwen3-27b', name: 'qwen3-27b', loaded: true, maxContextLength: 262144 }];
+const MODELS = [localModel({ id: 'qwen/qwen3-27b', name: 'qwen3-27b', loaded: true, maxContextLength: 262144 })];
 
 function init() {
   return post({
     type: 'init',
     models: MODELS,
-    currentModel: 'qwen/qwen3-27b',
+    currentModel: localRef('qwen/qwen3-27b'),
     agent: 'build',
     cwd: '/work',
     serverReady: true,
-    lmStudioConnected: true,
+    upstreamConnected: true, hasProviders: true,
     minContext: 32768,
   });
 }

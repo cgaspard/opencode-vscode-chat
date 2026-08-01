@@ -4,15 +4,15 @@
 import * as assert from 'node:assert';
 import * as helpers from './helpers';
 
-const { openPanel, post, text, count, classes, click, attr, waitFor } = helpers;
+const { openPanel, post, text, count, classes, click, attr, waitFor, localModel, localRef } = helpers;
 
 const MODELS = [
-  { id: 'qwen/qwen3-27b', name: 'qwen3-27b', loaded: false, maxContextLength: 262144, publisher: 'qwen', format: 'MLX', quantization: '8bit' },
-  { id: 'unsloth/llama-70b', name: 'llama-70b', loaded: false, maxContextLength: 131072, publisher: 'unsloth', format: 'GGUF', quantization: 'Q8_0' },
+  localModel({ id: 'qwen/qwen3-27b', name: 'qwen3-27b', maxContextLength: 262144, publisher: 'qwen', format: 'MLX', quantization: '8bit' }),
+  localModel({ id: 'unsloth/llama-70b', name: 'llama-70b', maxContextLength: 131072, publisher: 'unsloth', format: 'GGUF', quantization: 'Q8_0' }),
 ];
 
 function init() {
-  return post({ type: 'init', models: MODELS, currentModel: null, agent: 'build', cwd: '/tmp', serverReady: true, lmStudioConnected: true, minContext: 32768 });
+  return post({ type: 'init', models: MODELS, currentModel: null, agent: 'build', cwd: '/tmp', serverReady: true, upstreamConnected: true, hasProviders: true, minContext: 32768 });
 }
 
 // Stream `chars` characters of assistant text over the fake event stream, then
@@ -89,17 +89,21 @@ describe('v0.5.2 webview features', function () {
     });
 
     it('closes the menu once the load returns', async () => {
-      // Re-open and re-arm rather than inheriting the previous test's state.
-      // The host drives a real LM Studio, so it may already have answered that
-      // load and consumed the close-on-load flag — asserting the menu is still
-      // open here was a race, not a property of the behavior under test.
+      // Re-inject and re-arm rather than inheriting the previous test's state.
+      // Two things make inheriting a race rather than a property of the
+      // behavior under test: the host may already have answered that load and
+      // consumed the close-on-load flag, and with no provider configured its
+      // retry loop re-posts an empty `init` every few seconds, which clears the
+      // injected model list out from under a slow assertion.
+      await init();
+      await post({ type: 'models', models: MODELS, currentModel: null, reason: 'action' });
       if ((await count('#model-menu:not(.hidden)')) === 0) {
         assert.ok(await click('#model-btn'));
         await waitFor('#model-menu:not(.hidden)', (n) => n === 1);
       }
       await waitFor('.model-row .model-action.load', (n) => n >= 1);
       assert.ok(await click('.model-row .model-action.load'), 'arms close-on-load');
-      await post({ type: 'models', models: MODELS.map((m, i) => ({ ...m, loaded: i === 0 })), currentModel: 'qwen/qwen3-27b' });
+      await post({ type: 'models', models: MODELS.map((m, i) => ({ ...m, loaded: i === 0 })), currentModel: localRef('qwen/qwen3-27b') });
       await waitFor('#model-menu:not(.hidden)', (n) => n === 0);
       assert.strictEqual(await count('#model-menu:not(.hidden)'), 0, 'menu should close after load returns');
     });

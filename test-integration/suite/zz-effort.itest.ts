@@ -12,22 +12,22 @@
 import * as assert from 'node:assert';
 import * as helpers from './helpers';
 
-const { openPanel, post, count, text, click, classes, waitFor } = helpers;
+const { openPanel, post, count, text, click, classes, waitFor, localModel, localRef } = helpers;
 
 const BINARY = { allowedOptions: ['off', 'on'], default: 'on' };
 const GRANULAR = { allowedOptions: ['low', 'medium', 'high'], default: 'medium' };
 
 const MODELS = [
   // What every reasoning model in LM Studio looks like today.
-  { id: 'qwen/qwen3.6-27b', name: 'Qwen3.6 27B', loaded: true, maxContextLength: 32768, reasoning: BINARY },
+  localModel({ id: 'qwen/qwen3.6-27b', name: 'Qwen3.6 27B', loaded: true, maxContextLength: 32768, reasoning: BINARY }),
   // The one family that genuinely differentiates depth.
-  { id: 'openai/gpt-oss-20b', name: 'gpt-oss 20B', loaded: true, maxContextLength: 32768, reasoning: GRANULAR },
+  localModel({ id: 'openai/gpt-oss-20b', name: 'gpt-oss 20B', loaded: true, maxContextLength: 32768, reasoning: GRANULAR }),
   // Explicitly reports no reasoning support.
-  { id: 'qwen/qwen3-vl-8b', name: 'Qwen3 VL 8B', loaded: true, maxContextLength: 32768, reasoning: null },
+  localModel({ id: 'qwen/qwen3-vl-8b', name: 'Qwen3 VL 8B', loaded: true, maxContextLength: 32768, reasoning: null }),
 ];
 
-function postModels(currentModel: string) {
-  return post({ type: 'models', models: MODELS, currentModel, reason: 'action' });
+function postModels(modelID: string) {
+  return post({ type: 'models', models: MODELS, currentModel: localRef(modelID), reason: 'action' });
 }
 
 async function openModelMenu() {
@@ -45,11 +45,11 @@ describe('reasoning effort', function () {
     await post({
       type: 'init',
       models: MODELS,
-      currentModel: 'qwen/qwen3.6-27b',
+      currentModel: localRef('qwen/qwen3.6-27b'),
       agent: 'build',
       cwd: '/tmp',
       serverReady: true,
-      lmStudioConnected: true,
+      upstreamConnected: true, hasProviders: true,
       minContext: 32768,
       defaultEffort: 'auto',
     });

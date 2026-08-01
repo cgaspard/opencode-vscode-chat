@@ -40,7 +40,7 @@ import { modelDisambiguator, modelIdentity } from '../core/models';
 import { isTodoCardCollapsed, summarizeTodos, Todo } from '../core/todos';
 import { buildAnswers, isEmptyAnswer, parseQuestionBlob, QInfo } from '../core/question';
 import type { MessageWithParts, OpencodeEvent, Part } from '../opencode/protocol';
-import type { HostToWebview, UiAgent, UiCommand, UiGoal, UiImage, UiMcpServer, UiModel, UiServer, UiSession, UiSkill, WebviewToHost } from '../shared';
+import type { HostToWebview, UiAgent, UiCatalogProvider, UiCommand, UiDetectedServer, UiGoal, UiImage, UiMcpServer, UiModel, UiProvider, UiSession, UiSkill, WebviewToHost } from '../shared';
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: unknown): void;
@@ -69,8 +69,11 @@ interface State {
   currentSessionID: string | null;
   busy: boolean;
   serverReady: boolean;
-  lmStudioConnected: boolean;
-  lmStudioAuthRequired: boolean;
+  /** Whether any provider can currently serve a model. */
+  upstreamConnected: boolean;
+  upstreamAuthRequired: boolean;
+  /** Whether the user has any usable provider configured (drives onboarding). */
+  hasProviders: boolean;
   /** Reasoning depth per model id. Effort is a per-model property, so it is
    *  remembered per model rather than globally. */
   effortByModel: Record<string, EffortLevel>;
@@ -86,8 +89,12 @@ interface State {
   compacting: boolean; // a /compact run is in flight — input is blocked
   pendingCompaction: boolean; // compacted; true size is unknown until the next turn
   loadingModels: Set<string>;
-  servers: UiServer[];
-  activeServerId: string;
+  providers: UiProvider[];
+  /** The add-provider picker's current page of the models.dev catalog. */
+  catalog: UiCatalogProvider[];
+  catalogQuery: string;
+  /** Local servers the last detect probe found, offered as one-click adds. */
+  detected: UiDetectedServer[];
   activeFile: { path: string; chars: number } | null;
   includeActiveFile: boolean;
   activeSelection: { path: string; startLine: number; endLine: number; chars: number } | null;
@@ -109,8 +116,9 @@ const state: State = {
   currentSessionID: null,
   busy: false,
   serverReady: false,
-  lmStudioConnected: false,
-  lmStudioAuthRequired: false,
+  upstreamConnected: false,
+  upstreamAuthRequired: false,
+  hasProviders: false,
   effortByModel: persisted.effortByModel ?? {},
   defaultEffort: 'auto',
   // Migrate the old single boolean: it drove display as well as generation, so
@@ -123,8 +131,10 @@ const state: State = {
   compacting: false,
   pendingCompaction: false,
   loadingModels: new Set<string>(),
-  servers: [],
-  activeServerId: '',
+  providers: [],
+  catalog: [],
+  catalogQuery: '',
+  detected: [],
   activeFile: null,
   includeActiveFile: persisted.includeActiveFile ?? true,
   activeSelection: null,
@@ -287,8 +297,8 @@ function build(): void {
         <textarea id="input" rows="1" placeholder="Ask anything, paste an image, or describe a task…"></textarea>
         <div class="composer-row">
           <div class="composer-tools">
-            <button id="server-btn" class="tool-pill" title="LM Studio server — switch / add">
-              <span class="model-dot"></span><span id="server-name">Server</span>
+            <button id="server-btn" class="tool-pill" title="Providers — add API keys or local servers">
+              <span class="model-dot"></span><span id="server-name">Providers</span>
             </button>
             <button id="btn-attach" class="tool-pill icon-only" title="Attach image">${icon.paperclip}</button>
             <button id="btn-think" class="tool-pill" title="Toggle thinking">${icon.brain}<span>Thinking</span></button>
@@ -312,7 +322,7 @@ function build(): void {
     </div>
     <div id="model-menu" class="model-menu hidden">
       <div class="model-menu-head">
-        <span>LM Studio models</span>
+        <span>Models</span>
         <button id="model-refresh" class="icon-btn" title="Rescan models">${icon.refresh}</button>
       </div>
       <div id="model-menu-list" class="model-menu-list"></div>
@@ -327,20 +337,51 @@ function build(): void {
       </div>
     </div>
     <div id="overflow-menu" class="model-menu overflow-menu hidden"></div>
-    <div id="server-menu" class="model-menu hidden">
-      <div class="model-menu-head"><span>LM Studio servers</span></div>
+    <div id="server-menu" class="model-menu provider-menu hidden">
+      <div class="model-menu-head">
+        <span>Providers</span>
+        <button id="provider-detect" class="icon-btn" title="Scan for local servers (LM Studio, Ollama, vLLM)">${icon.refresh}</button>
+      </div>
       <div id="server-menu-list" class="model-menu-list"></div>
-      <div class="server-add">
+      <div id="detected-list" class="detected-list hidden"></div>
+      <div class="provider-tabs">
+        <button id="tab-cloud" class="provider-tab active" data-tab="cloud">Add API key</button>
+        <button id="tab-local" class="provider-tab" data-tab="local">Add local server</button>
+      </div>
+      <div id="add-cloud" class="server-add">
+        <input id="catalog-search" class="server-input" placeholder="Search 170+ providers (anthropic, openai, groq…)" />
+        <div id="catalog-list" class="catalog-list"></div>
+      </div>
+      <div id="add-local" class="server-add hidden">
         <input id="server-add-name" class="server-input" placeholder="Name (e.g. Workstation)" />
         <input id="server-add-url" class="server-input" placeholder="http://192.168.1.50:1234" />
         <input id="server-add-key" class="server-input" type="password" autocomplete="off" placeholder="API key (optional, for auth proxies)" />
-        <button id="server-add-btn" class="model-action load">Add server</button>
+        <button id="server-add-btn" class="model-action load">Add local server</button>
+      </div>
+    </div>
+    <div id="key-overlay" class="overlay hidden">
+      <div class="overlay-card">
+        <div class="overlay-head">
+          <span id="key-title">Add provider</span>
+          <div class="overlay-head-actions">
+            <button id="key-close" class="icon-btn">${icon.close}</button>
+          </div>
+        </div>
+        <div class="server-edit-form">
+          <label class="server-edit-label" for="key-input">API key</label>
+          <input id="key-input" class="server-input" type="password" autocomplete="off" placeholder="Paste your API key" />
+          <span id="key-hint" class="effort-note"></span>
+          <div class="server-edit-actions">
+            <button id="key-save" class="model-action load">Save</button>
+            <button id="key-cancel" class="clear-all-btn">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
     <div id="server-edit-overlay" class="overlay hidden">
       <div class="overlay-card">
         <div class="overlay-head">
-          <span>Edit server</span>
+          <span>Edit provider</span>
           <div class="overlay-head-actions">
             <button id="server-edit-close" class="icon-btn">${icon.close}</button>
           </div>
@@ -622,10 +663,42 @@ function build(): void {
     const urlEl = document.getElementById('server-add-url') as HTMLInputElement;
     const keyEl = document.getElementById('server-add-key') as HTMLInputElement;
     if (urlEl.value.trim()) {
-      post({ type: 'addServer', name: nameEl.value, url: urlEl.value, apiKey: keyEl.value.trim() || undefined });
+      post({ type: 'addLocalProvider', name: nameEl.value, url: urlEl.value, apiKey: keyEl.value.trim() || undefined });
       nameEl.value = '';
       urlEl.value = '';
       keyEl.value = '';
+    }
+  });
+  // Provider panel: tab switch, catalog search, local scan, key prompt.
+  for (const tab of ['cloud', 'local']) {
+    document.getElementById(`tab-${tab}`)!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectProviderTab(tab);
+    });
+  }
+  const catalogSearch = document.getElementById('catalog-search') as HTMLInputElement;
+  catalogSearch.addEventListener('click', (e) => e.stopPropagation());
+  catalogSearch.addEventListener('input', () => {
+    // Debounced: the host answers from a cached catalog, but typing fast
+    // shouldn't queue a request per keystroke.
+    clearTimeout(catalogDebounce);
+    catalogDebounce = setTimeout(() => post({ type: 'searchCatalog', query: catalogSearch.value }), 150);
+  });
+  document.getElementById('provider-detect')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    post({ type: 'detectLocalProviders' });
+  });
+  document.getElementById('key-close')!.addEventListener('click', closeKeyPrompt);
+  document.getElementById('key-cancel')!.addEventListener('click', closeKeyPrompt);
+  document.getElementById('key-save')!.addEventListener('click', saveKeyPrompt);
+  document.getElementById('key-input')!.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') {
+      saveKeyPrompt();
+    }
+  });
+  document.getElementById('key-overlay')!.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      closeKeyPrompt();
     }
   });
   document.getElementById('server-edit-close')!.addEventListener('click', closeServerEdit);
@@ -1192,7 +1265,7 @@ function onSend(): void {
   if (runSlashCommand(text)) {
     return;
   }
-  if (!state.lmStudioConnected) {
+  if (!state.upstreamConnected) {
     setStatus('Not connected to LM Studio — check the server banner above.', 'warn');
     return;
   }
@@ -1579,6 +1652,9 @@ function renderModels(): void {
   if (!modelMenu.classList.contains('hidden')) {
     renderModelMenu();
   }
+  // The banner depends on the SELECTED model's provider, so a selection change
+  // can turn it on or off just as a probe result can.
+  renderConnection();
   layoutComposer(); // the model label's width changed — refit the row
 }
 
@@ -1588,10 +1664,24 @@ function renderModelMenu(): void {
   const scrollTop = modelMenuList.scrollTop;
   modelMenuList.innerHTML = '';
   if (!state.models.length) {
-    modelMenuList.innerHTML = `<div class="model-empty">No models found. Start LM Studio's server and download a model.</div>`;
+    modelMenuList.innerHTML = state.hasProviders
+      ? `<div class="model-empty">No models available. Check your providers.</div>`
+      : `<div class="model-empty">No providers configured yet — open <b>Providers</b> to add an API key or a local server.</div>`;
     return;
   }
+  // Models arrive grouped by provider (registry order). A header per provider
+  // is what makes a mixed list readable: the same model id can appear under two
+  // providers at very different prices, so the provider is not a detail.
+  let lastProvider = '';
   for (const m of state.models) {
+    if (m.providerID !== lastProvider) {
+      lastProvider = m.providerID;
+      const head = document.createElement('div');
+      head.className = 'model-group';
+      const count = state.models.filter((x) => x.providerID === m.providerID).length;
+      head.innerHTML = `<span class="model-group-name">${escapeHtml(m.providerName)}</span><span class="model-group-count">${count}</span>`;
+      modelMenuList.appendChild(head);
+    }
     const row = document.createElement('div');
     row.className = 'model-row' + (m.id === state.currentModel ? ' active' : '');
     const loading = state.loadingModels.has(m.id);
@@ -1599,14 +1689,24 @@ function renderModelMenu(): void {
       m.vision ? `<span class="model-cap" title="Vision">${icon.eye}</span>` : '',
       m.toolUse ? `<span class="model-cap" title="Tool use">${icon.wrench}</span>` : '',
     ].join('');
-    const ctx = m.loaded
-      ? `${formatTokens(m.contextLength || 0)} / ${formatTokens(m.maxContextLength || 0)}`
-      : `max ${formatTokens(m.maxContextLength || 0)}`;
+    // Local models report what they're loaded with; cloud models only have the
+    // window the catalog declares. Price is shown where there is one — with
+    // your own key, what a model costs is part of choosing it.
+    const ctx = m.lifecycle
+      ? m.loaded
+        ? `${formatTokens(m.contextLength || 0)} / ${formatTokens(m.maxContextLength || 0)}`
+        : `max ${formatTokens(m.maxContextLength || 0)}`
+      : m.maxContextLength
+        ? `${formatTokens(m.maxContextLength)} ctx`
+        : '';
+    const price = formatPrice(m);
+    const meta = [m.loaded ? 'loaded' : '', ctx, price].filter(Boolean).join(' · ');
     // Identity line: publisher / format / quant — the fields that tell apart
     // same-named models. Only shown when present.
     const ident = modelIdentity(m);
-    // Disambiguate the name itself when it isn't unique in the list.
-    const tag = modelDisambiguator(m, state.models);
+    // Disambiguate the name itself when it isn't unique *within its provider*.
+    const siblings = state.models.filter((x) => x.providerID === m.providerID);
+    const tag = modelDisambiguator(m, siblings);
     // An id tag is long and case-sensitive; a publisher tag is a short label.
     const tagIsId = tag === m.id;
     const nameTag = tag
@@ -1617,11 +1717,17 @@ function renderModelMenu(): void {
       <span class="model-info">
         <span class="model-name-row">${nameTag}</span>
         ${ident ? `<span class="model-ident">${escapeHtml(ident)}</span>` : ''}
-        <span class="model-meta">${m.loaded ? 'loaded · ' : ''}${ctx}${caps ? ' · <span class="model-caps">' + caps + '</span>' : ''}</span>
+        <span class="model-meta">${meta}${caps ? ' · <span class="model-caps">' + caps + '</span>' : ''}</span>
       </span>
-      <button class="model-action ${loading ? 'busy' : m.loaded ? 'eject' : 'load'}" aria-busy="${loading}">
+      ${
+        // Load/eject only exists where a model lives in memory and we can drive
+        // it — LM Studio. A cloud model has no such state to control.
+        m.lifecycle
+          ? `<button class="model-action ${loading ? 'busy' : m.loaded ? 'eject' : 'load'}" aria-busy="${loading}">
         ${loading ? `${icon.spinner}<span>${m.loaded ? 'Ejecting…' : 'Loading…'}</span>` : m.loaded ? 'Eject' : 'Load'}
-      </button>`;
+      </button>`
+          : ''
+      }`;
     // Row click selects the model as active.
     row.addEventListener('click', () => {
       state.currentModel = m.id;
@@ -1632,8 +1738,8 @@ function renderModelMenu(): void {
     });
     // Action button loads / ejects. Loading also makes the model active (you
     // loaded it to use it); ejecting leaves the current selection alone.
-    const action = row.querySelector('.model-action') as HTMLButtonElement;
-    action.addEventListener('click', (e) => {
+    const action = row.querySelector('.model-action') as HTMLButtonElement | null;
+    action?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (loading) {
         return;
@@ -1653,6 +1759,20 @@ function renderModelMenu(): void {
   modelMenuList.scrollTop = scrollTop;
   renderCtxPresets();
   renderEffortPresets();
+}
+
+/** "$3/$15 per Mtok" for a priced model; '' for local or free ones. */
+function formatPrice(m: UiModel): string {
+  const inp = m.cost?.input;
+  const out = m.cost?.output;
+  if (inp === undefined && out === undefined) {
+    return '';
+  }
+  if (!inp && !out) {
+    return 'free';
+  }
+  const fmt = (n?: number) => (n === undefined ? '?' : n < 1 ? `$${n.toFixed(2)}` : `$${n}`);
+  return `${fmt(inp)}/${fmt(out)} per Mtok`;
 }
 
 function renderCtxPresets(): void {
@@ -1724,65 +1844,185 @@ function closeModelMenu(): void {
 function renderServers(): void {
   const dot = serverBtn.querySelector('.model-dot') as HTMLElement;
   const name = document.getElementById('server-name')!;
-  const active = state.servers.find((s) => s.id === state.activeServerId);
-  dot.classList.toggle('loaded', state.lmStudioConnected);
-  dot.classList.toggle('err', !state.lmStudioConnected);
-  name.textContent = active ? active.name : 'Server';
-  serverBtn.title = active ? `LM Studio: ${active.url}` : 'LM Studio server';
+  const ready = state.providers.filter((p) => p.enabled && p.status === 'ready');
+  dot.classList.toggle('loaded', state.upstreamConnected);
+  dot.classList.toggle('err', !state.upstreamConnected);
+  // The pill counts what's live rather than naming one server: there is no
+  // single "active" provider any more.
+  name.textContent = ready.length ? `${ready.length} provider${ready.length > 1 ? 's' : ''}` : 'Providers';
+  serverBtn.title = ready.length
+    ? `Providers: ${ready.map((p) => p.name).join(', ')}`
+    : 'Providers — add an API key or a local server';
   if (!serverMenu.classList.contains('hidden')) {
     renderServerMenu();
   }
   renderConnection();
 }
 
+const STATUS_LABEL: Record<UiProvider['status'], string> = {
+  ready: 'ready',
+  'needs-key': 'needs a key',
+  offline: 'offline',
+  disabled: 'disabled',
+  unknown: 'not checked',
+};
+
 function renderServerMenu(): void {
   serverMenuList.innerHTML = '';
-  for (const s of state.servers) {
-    const isActive = s.id === state.activeServerId;
+  for (const p of state.providers) {
     const row = document.createElement('div');
-    row.className = 'model-row' + (isActive ? ' active' : '');
+    row.className = 'model-row provider-row' + (p.enabled ? '' : ' dimmed');
+    const detail =
+      p.kind === 'local'
+        ? escapeHtml(p.url ?? '')
+        : p.kind === 'builtin'
+          ? 'Free — no key required'
+          : p.hasApiKey
+            ? '<span class="server-key-badge" title="API key stored">key</span>'
+            : 'No API key yet';
+    const models = p.modelCount ? ` · ${p.modelCount} model${p.modelCount > 1 ? 's' : ''}` : '';
     row.innerHTML = `
-      <span class="model-dot${isActive && state.lmStudioConnected ? ' loaded' : ''}"></span>
+      <span class="model-dot${p.enabled && p.status === 'ready' ? ' loaded' : p.status === 'offline' ? ' err' : ''}"></span>
       <span class="model-info">
-        <span class="model-name">${escapeHtml(s.name)}${isActive ? ' ·  active' : ''}</span>
-        <span class="model-meta">${escapeHtml(s.url)}${s.hasApiKey ? '<span class="server-key-badge" title="API key configured">key</span>' : ''}</span>
+        <span class="model-name">${escapeHtml(p.name)}</span>
+        <span class="model-meta">${detail} · ${STATUS_LABEL[p.status]}${models}</span>
       </span>
-      <button class="model-action server-edit" title="Edit server">${icon.pencil}</button>
-      <button class="model-action eject" title="Remove server">✕</button>`;
-    row.addEventListener('click', () => {
-      if (!isActive) {
-        post({ type: 'switchServer', id: s.id });
-      }
-      closeServerMenu();
+      <button class="model-action provider-toggle" title="${p.enabled ? 'Disable' : 'Enable'}">${p.enabled ? 'On' : 'Off'}</button>
+      ${p.kind === 'builtin' ? '' : `<button class="model-action server-edit" title="Edit provider">${icon.pencil}</button>`}
+      ${p.kind === 'builtin' ? '' : '<button class="model-action eject" title="Remove provider">✕</button>'}`;
+    (row.querySelector('.provider-toggle') as HTMLButtonElement).addEventListener('click', (e) => {
+      e.stopPropagation();
+      post({ type: 'setProviderEnabled', id: p.id, enabled: !p.enabled });
     });
-    (row.querySelector('.server-edit') as HTMLButtonElement).addEventListener('click', (e) => {
+    (row.querySelector('.server-edit') as HTMLButtonElement | null)?.addEventListener('click', (e) => {
       e.stopPropagation();
       closeServerMenu();
-      openServerEdit(s);
+      openServerEdit(p);
     });
-    (row.querySelector('.eject') as HTMLButtonElement).addEventListener('click', (e) => {
+    (row.querySelector('.eject') as HTMLButtonElement | null)?.addEventListener('click', (e) => {
       e.stopPropagation();
-      post({ type: 'removeServer', id: s.id });
+      post({ type: 'removeProvider', id: p.id });
     });
     serverMenuList.appendChild(row);
   }
+  renderDetected();
+  renderCatalog();
 }
 
-// ---- Server edit overlay ----------------------------------------------------
+/** Local servers the probe found but that aren't configured yet. */
+function renderDetected(): void {
+  const el = document.getElementById('detected-list')!;
+  el.innerHTML = '';
+  el.classList.toggle('hidden', !state.detected.length);
+  for (const d of state.detected) {
+    const row = document.createElement('div');
+    row.className = 'model-row';
+    row.innerHTML = `
+      <span class="model-dot loaded"></span>
+      <span class="model-info">
+        <span class="model-name">${escapeHtml(d.name)} found</span>
+        <span class="model-meta">${escapeHtml(d.url)}</span>
+      </span>
+      <button class="model-action load">Add</button>`;
+    (row.querySelector('.model-action') as HTMLButtonElement).addEventListener('click', (e) => {
+      e.stopPropagation();
+      post({ type: 'addLocalProvider', name: d.name, url: d.url, flavor: d.flavor });
+      state.detected = state.detected.filter((x) => x.url !== d.url);
+      renderDetected();
+    });
+    el.appendChild(row);
+  }
+}
 
-/** The server currently open in the edit overlay (null when closed). */
-let editingServer: UiServer | null = null;
+/** The searchable models.dev provider list in the "Add API key" tab. */
+function renderCatalog(): void {
+  const el = document.getElementById('catalog-list');
+  if (!el) {
+    return;
+  }
+  el.innerHTML = '';
+  if (!state.catalog.length) {
+    el.innerHTML = `<div class="model-empty">No provider matches “${escapeHtml(state.catalogQuery)}”.</div>`;
+    return;
+  }
+  for (const c of state.catalog) {
+    const row = document.createElement('div');
+    row.className = 'model-row' + (c.configured ? ' dimmed' : '');
+    row.innerHTML = `
+      <span class="model-info">
+        <span class="model-name">${escapeHtml(c.name)}</span>
+        <span class="model-meta">${c.modelCount} model${c.modelCount === 1 ? '' : 's'}${c.configured ? ' · already added' : ''}</span>
+      </span>
+      <button class="model-action load">${c.configured ? 'Update key' : 'Add'}</button>`;
+    (row.querySelector('.model-action') as HTMLButtonElement).addEventListener('click', (e) => {
+      e.stopPropagation();
+      openKeyPrompt(c);
+    });
+    el.appendChild(row);
+  }
+}
 
-function openServerEdit(s: UiServer): void {
+// ---- Key prompt -------------------------------------------------------------
+
+/** The catalog provider whose key is being entered (null when closed). */
+let keyingProvider: UiCatalogProvider | null = null;
+
+function openKeyPrompt(c: UiCatalogProvider): void {
+  keyingProvider = c;
+  document.getElementById('key-title')!.textContent = `${c.configured ? 'Update' : 'Add'} ${c.name}`;
+  const input = document.getElementById('key-input') as HTMLInputElement;
+  input.value = '';
+  const hint = document.getElementById('key-hint')!;
+  hint.innerHTML = c.doc
+    ? `Stored in your OS keychain via VS Code SecretStorage. <a href="${escapeHtml(c.doc)}">Get a key →</a>`
+    : 'Stored in your OS keychain via VS Code SecretStorage.';
+  document.getElementById('key-overlay')!.classList.remove('hidden');
+  input.focus();
+}
+
+function closeKeyPrompt(): void {
+  keyingProvider = null;
+  // Don't leave a typed key sitting in the (hidden) DOM.
+  (document.getElementById('key-input') as HTMLInputElement).value = '';
+  document.getElementById('key-overlay')!.classList.add('hidden');
+}
+
+function saveKeyPrompt(): void {
+  if (!keyingProvider) {
+    return;
+  }
+  const key = (document.getElementById('key-input') as HTMLInputElement).value.trim();
+  if (!key) {
+    return;
+  }
+  post({ type: 'addProvider', providerID: keyingProvider.id, name: keyingProvider.name, apiKey: key });
+  closeKeyPrompt();
+  closeServerMenu();
+}
+
+// ---- Provider edit overlay --------------------------------------------------
+
+/** The provider currently open in the edit overlay (null when closed). */
+let editingServer: UiProvider | null = null;
+
+function openServerEdit(s: UiProvider): void {
   editingServer = s;
   (document.getElementById('server-edit-name') as HTMLInputElement).value = s.name;
-  (document.getElementById('server-edit-url') as HTMLInputElement).value = s.url;
+  const urlEl = document.getElementById('server-edit-url') as HTMLInputElement;
+  urlEl.value = s.url ?? '';
+  // A cloud provider has no URL to edit — it is reached through OpenCode.
+  urlEl.disabled = s.kind !== 'local';
+  urlEl.placeholder = s.kind === 'local' ? '' : 'Not applicable for a cloud provider';
   const keyEl = document.getElementById('server-edit-key') as HTMLInputElement;
   keyEl.value = '';
   keyEl.disabled = false;
   // The stored key is never sent to the webview, so the field can't be
   // prefilled — an empty field means "keep the current key".
-  keyEl.placeholder = s.hasApiKey ? 'Unchanged — type to replace' : 'API key (optional, for auth proxies)';
+  keyEl.placeholder = s.hasApiKey
+    ? 'Unchanged — type to replace'
+    : s.kind === 'local'
+      ? 'API key (optional, for auth proxies)'
+      : 'API key';
   const removeRow = document.getElementById('server-edit-remove-row')!;
   removeRow.classList.toggle('hidden', !s.hasApiKey);
   (document.getElementById('server-edit-remove-key') as HTMLInputElement).checked = false;
@@ -1804,12 +2044,18 @@ function saveServerEdit(): void {
   const url = (document.getElementById('server-edit-url') as HTMLInputElement).value;
   const key = (document.getElementById('server-edit-key') as HTMLInputElement).value.trim();
   const removeKey = (document.getElementById('server-edit-remove-key') as HTMLInputElement).checked;
-  if (!url.trim()) {
+  if (editingServer.kind === 'local' && !url.trim()) {
     return;
   }
   // Tri-state key edit: remove beats replace; an untouched field keeps the key.
   const apiKey = removeKey ? null : key || undefined;
-  post({ type: 'updateServer', id: editingServer.id, name, url, apiKey });
+  post({
+    type: 'updateProvider',
+    id: editingServer.id,
+    name,
+    ...(editingServer.kind === 'local' ? { url } : {}),
+    apiKey,
+  });
   closeServerEdit();
 }
 
@@ -1874,6 +2120,17 @@ function closeOverflowMenu(): void {
   overflowMenuEl.classList.add('hidden');
 }
 
+/** Pending catalog-search debounce (typing shouldn't queue a request per key). */
+let catalogDebounce: ReturnType<typeof setTimeout> | undefined;
+
+/** Switch the providers panel between "Add API key" and "Add local server". */
+function selectProviderTab(tab: string): void {
+  for (const t of ['cloud', 'local']) {
+    document.getElementById(`tab-${t}`)!.classList.toggle('active', t === tab);
+    document.getElementById(`add-${t}`)!.classList.toggle('hidden', t !== tab);
+  }
+}
+
 function toggleServerMenu(): void {
   if (serverMenu.classList.contains('hidden')) {
     openServerMenu();
@@ -1883,7 +2140,10 @@ function toggleServerMenu(): void {
 }
 
 function openServerMenu(): void {
-  post({ type: 'listServers' });
+  post({ type: 'listProviders' });
+  if (!state.catalog.length) {
+    post({ type: 'searchCatalog', query: '' });
+  }
   renderServerMenu();
   serverMenu.classList.remove('hidden');
   const r = serverBtn.getBoundingClientRect();
@@ -1902,18 +2162,41 @@ function closeServerMenu(): void {
 }
 
 function renderConnection(): void {
-  if (state.lmStudioConnected) {
+  // The selected model's own provider being down is a banner-worthy problem
+  // even while other providers are fine: the next send would fail. Without
+  // this, configuring any cloud provider would silently mask a dead local
+  // server, since the aggregate stays "connected".
+  const selected = state.models.find((m) => m.id === state.currentModel);
+  const selectedProvider = selected
+    ? state.providers.find((p) => p.providerID === selected.providerID)
+    : undefined;
+  const selectedDown = selectedProvider?.status === 'offline';
+  if (state.upstreamConnected && !selectedDown) {
     connBanner.classList.add('hidden');
     connBanner.innerHTML = '';
     return;
   }
-  const active = state.servers.find((s) => s.id === state.activeServerId);
   connBanner.classList.remove('hidden');
-  const auth = state.lmStudioAuthRequired;
-  const title = auth ? 'LM Studio requires an API key' : "Can't reach LM Studio";
-  const sub = auth
-    ? `<code>${escapeHtml(active?.url ?? '')}</code> rejected the request (401) — ${active?.hasApiKey ? 'the stored key was refused; update it' : 'add a key'} under <b>Servers</b>.`
-    : `<code>${escapeHtml(active?.url ?? '')}</code> isn't responding — start the server or switch.`;
+  const auth = state.upstreamAuthRequired;
+  const offline = selectedDown
+    ? [selectedProvider!]
+    : state.providers.filter((p) => p.enabled && p.kind === 'local' && p.status === 'offline');
+  // Three genuinely different problems, three different fixes: nothing
+  // configured, a key that was refused, or a local server that isn't running.
+  const title = !state.hasProviders
+    ? 'No provider configured'
+    : auth
+      ? 'A provider rejected your API key'
+      : selectedDown
+        ? `Can't reach ${selectedProvider!.name}`
+        : "Can't reach your provider";
+  const sub = !state.hasProviders
+    ? 'Add an API key for a cloud provider, point at a local server, or use the free <b>OpenCode Zen</b> models — all under <b>Providers</b>.'
+    : auth
+      ? 'The stored key was refused (401) — update it under <b>Providers</b>.'
+      : offline.length
+        ? `${offline.map((p) => `<code>${escapeHtml(p.url ?? p.name)}</code>`).join(', ')} isn't responding — start it${selectedDown ? ', or pick a model from another provider' : ', or add another provider'}.`
+        : 'Nothing is responding — check your providers.';
   connBanner.innerHTML = `
     <span class="conn-ico"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 5h2v7h-2V7zm0 9h2v2h-2v-2z"/></svg></span>
     <span class="conn-text">
@@ -1922,7 +2205,7 @@ function renderConnection(): void {
     </span>
     <span class="conn-actions">
       <button class="conn-btn" id="conn-retry">Retry</button>
-      <button class="conn-btn primary" id="conn-servers">Servers</button>
+      <button class="conn-btn primary" id="conn-servers">Providers</button>
     </span>`;
   connBanner.querySelector('#conn-retry')!.addEventListener('click', () => post({ type: 'retryConnect' }));
   connBanner.querySelector('#conn-servers')!.addEventListener('click', (e) => {
@@ -3053,8 +3336,9 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       state.currentModel = msg.currentModel;
       state.agent = msg.agent;
       state.serverReady = msg.serverReady;
-      state.lmStudioConnected = msg.lmStudioConnected;
-      state.lmStudioAuthRequired = !!msg.lmStudioAuthRequired;
+      state.upstreamConnected = msg.upstreamConnected;
+      state.upstreamAuthRequired = !!msg.upstreamAuthRequired;
+      state.hasProviders = msg.hasProviders;
       state.minContext = msg.minContext;
       state.defaultEffort = msg.defaultEffort ?? 'auto';
       state.agents = msg.agents ?? [];
@@ -3062,15 +3346,29 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       renderMeter();
       renderServers();
       applyEffort(); // levels depend on the selected model's declared capability
-      if (!msg.serverReady && msg.lmStudioConnected) {
+      if (!msg.serverReady && msg.upstreamConnected) {
         setStatus('OpenCode server failed to start. See logs.', 'error');
       }
       break;
-    case 'servers':
-      state.servers = msg.servers;
-      state.activeServerId = msg.activeId;
-      state.lmStudioConnected = msg.connected;
+    case 'providers':
+      state.providers = msg.providers;
+      state.hasProviders = msg.providers.some(
+        (p) => p.enabled && (p.status === 'ready' || p.status === 'offline'),
+      );
+      state.upstreamConnected = msg.connected;
       renderServers();
+      break;
+    case 'catalog':
+      state.catalog = msg.providers;
+      state.catalogQuery = msg.query;
+      renderCatalog();
+      break;
+    case 'detectedLocal':
+      state.detected = msg.servers;
+      renderDetected();
+      if (!msg.servers.length) {
+        setStatus('No local inference server found on the usual ports.', 'info');
+      }
       break;
     case 'models':
       state.models = msg.models;

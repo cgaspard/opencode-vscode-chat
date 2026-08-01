@@ -115,7 +115,7 @@ describe('polling e2e (issue #7)', function () {
   this.timeout(120_000);
 
   const fake = new FakeLmStudio();
-  let restore: { id: string; prevActiveId: string } | undefined;
+  let restore: { id: string } | undefined;
 
   before(async function () {
     this.timeout(90_000);
@@ -133,7 +133,7 @@ describe('polling e2e (issue #7)', function () {
       'opencodeChat._test.useServer',
       `http://127.0.0.1:${fake.port}/v1`,
     );
-    await openPanel();
+    await openPanel({ quiesce: false }); // useServer already made the fake the only provider
     // Full real connect: upstream probe → OpenCode server boot → model load.
     await waitUntil(
       () => fake.countSince('/api/v1/models', 0) >= 1,

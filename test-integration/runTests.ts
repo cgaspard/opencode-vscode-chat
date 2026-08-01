@@ -16,6 +16,11 @@ async function main(): Promise<void> {
   const extensionTestsPath = path.resolve(__dirname, 'suite', 'index.js');
   try {
     await runTests({
+      // Pinned rather than "stable": VS Code 1.131 ships its macOS binary only
+      // as `MacOS/Code`, while @vscode/test-electron 3.x still launches
+      // `MacOS/Electron` — so an unpinned run fails with ENOENT before a single
+      // test executes. Raise this once test-electron handles the rename.
+      version: process.env.VSCODE_TEST_VERSION ?? '1.130.0',
       extensionDevelopmentPath,
       extensionTestsPath,
     });

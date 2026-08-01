@@ -81,3 +81,46 @@ test('fallbackPromptText only fires when the parameter path is unavailable', () 
   assert.match(fallbackPromptText('high', undefined), /step by step|thoroughly/i);
   assert.equal(fallbackPromptText('auto', undefined), '');
 });
+
+// ---- declared (catalog) variants -------------------------------------------
+// Cloud models publish their own variant names; we offer exactly those rather
+// than the fixed table we inject for local endpoints.
+
+const ANTHROPIC: ReasoningCapability = {
+  allowedOptions: ['low', 'medium', 'high', 'max'],
+  declared: true,
+};
+const OPENAI: ReasoningCapability = { allowedOptions: ['medium', 'high', 'xhigh'], declared: true };
+
+test('a declared scale is offered verbatim, in effort order', () => {
+  assert.deepEqual(levelsForModel(ANTHROPIC), ['auto', 'low', 'medium', 'high', 'max']);
+  assert.deepEqual(levelsForModel(OPENAI), ['auto', 'medium', 'high', 'xhigh']);
+});
+
+test('a declared scale never invents an Off it cannot send', () => {
+  // Neither provider declares an "off" variant, so offering one would be a
+  // control that silently does nothing.
+  assert.ok(!levelsForModel(ANTHROPIC).includes('off'));
+  assert.ok(!levelsForModel(OPENAI).includes('off'));
+});
+
+test('a reasoning model that declares no variants hides the control', () => {
+  assert.deepEqual(levelsForModel({ allowedOptions: [], declared: true }), []);
+});
+
+test('a declared scale is never collapsed to a binary On', () => {
+  assert.equal(isBinary(ANTHROPIC), false);
+  assert.equal(levelLabel('high', ANTHROPIC), 'High');
+  assert.equal(levelLabel('max', ANTHROPIC), 'Max');
+  assert.equal(levelLabel('xhigh', OPENAI), 'X-High');
+});
+
+test('a level carried from another model degrades to one this model has', () => {
+  // "off" from a local model against OpenAI, whose floor is medium: take the
+  // floor rather than auto, which would silently mean MORE effort than asked.
+  assert.equal(resolveLevel('off', OPENAI), 'medium');
+  // "max" from Anthropic against OpenAI degrades down to xhigh.
+  assert.equal(resolveLevel('max', OPENAI), 'xhigh');
+  // A level the model does have passes through untouched.
+  assert.equal(resolveLevel('high', ANTHROPIC), 'high');
+});

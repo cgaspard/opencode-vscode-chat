@@ -2110,3 +2110,105 @@ body.compacting .send-btn {
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
 }
+
+/* ---------------------------------------------------------------------------
+   Providers panel + grouped model picker
+   --------------------------------------------------------------------------- */
+
+/* The providers panel carries more sections than the model menu (list, detected
+   servers, tabs, add form), so it gets more room and scrolls per-section. */
+.provider-menu {
+  max-height: 72vh;
+}
+.provider-menu .model-menu-list {
+  max-height: 34vh;
+}
+
+/* Provider rows carry three trailing actions (toggle / edit / remove) rather
+   than one, and are not themselves selectable — nothing happens on row click. */
+.provider-row {
+  cursor: default;
+}
+.provider-row .model-action {
+  flex: none;
+}
+.model-row.dimmed {
+  opacity: 0.55;
+}
+.model-action.provider-toggle {
+  min-width: 34px;
+  text-align: center;
+}
+
+/* Tabs choosing what kind of provider to add. */
+.provider-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 9px 0;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+}
+.provider-tab {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 6px 6px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.provider-tab:hover {
+  background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.12));
+}
+.provider-tab.active {
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-activeSelectionBackground, rgba(108, 92, 231, 0.22));
+  border-color: var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
+}
+
+/* The searchable catalog list under the "Add API key" tab. */
+.catalog-list {
+  max-height: 26vh;
+  overflow-y: auto;
+}
+.catalog-list .model-row {
+  padding: 5px 7px;
+}
+
+/* Local servers found by the port scan, offered above the add form. */
+.detected-list {
+  padding: 4px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+}
+.detected-list.hidden {
+  display: none;
+}
+
+/* Provider headers in the model picker. Sticky so the provider a model belongs
+   to stays visible while scrolling a long mixed list. */
+.model-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px 3px;
+  margin-top: 2px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+}
+.model-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-group-count {
+  flex: none;
+  opacity: 0.7;
+}
