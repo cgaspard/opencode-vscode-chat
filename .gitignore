@@ -22,3 +22,6 @@ sample-workspace/.opencode/**/node_modules/
 *token.txt
 pat.txt
 *.pem
+
+# Graphoxide code-graph output, regenerated on demand.
+/graphoxide-out/
