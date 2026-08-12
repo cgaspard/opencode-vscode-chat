@@ -1,0 +1,10 @@
+version: 0.5.0
+date: 2026-08-12
+highlights:
+  - Bundled OpenCode upgraded 1.18.11 → 1.18.17, six upstream releases of fixes verified end-to-end with zero changes to existing behavior.
+added: []
+changed:
+  - The bundled OpenCode server is now 1.18.17. Message history is ordered by true chronology, repeated /compact keeps earlier tool-call history in summaries and produces clearer summaries on smaller models, MCP connections recover better after errors and expired sessions, transient model-server errors are retried with a cap (~5 attempts) instead of hanging the turn forever, and unknown config keys no longer risk breaking server startup.
+  - Every consumed endpoint and event was verified live on the new server — streaming, thinking blocks (both reasoning field styles models use), reasoning-effort variants on the wire, /compact plus post-compaction turns, session history, and permission prompts all behave exactly as before.
+fixed: []
+removed: []
