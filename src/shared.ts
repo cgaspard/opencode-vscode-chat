@@ -1,9 +1,10 @@
 // Message protocol shared between the extension host and the webview.
 import type { EffortLevel, ReasoningCapability } from './core/effort';
+import type { PermissionMode } from './core/permission';
 import type { ConnectionKind, LocalFlavor, LocalServerOption } from './core/providers';
 import type { MessageWithParts, OpencodeEvent, PermissionResponse } from './opencode/protocol';
 
-export type { ConnectionKind, EffortLevel, LocalFlavor, LocalServerOption, ReasoningCapability };
+export type { ConnectionKind, EffortLevel, LocalFlavor, LocalServerOption, PermissionMode, ReasoningCapability };
 
 export interface UiModel {
   /** Provider-qualified reference, "<providerID>/<modelID>" — unique, and what selection stores. */
@@ -170,6 +171,8 @@ export type HostToWebview =
       minContext: number;
       /** Fallback effort for models with no per-model choice stored yet. */
       defaultEffort: EffortLevel;
+      /** Current tool-approval posture (drives the composer's permissions picker). */
+      permissionMode: PermissionMode;
     }
   // reason 'action' = reply to something the user did (load/eject/rescan) and
   // may clear load spinners / dismiss the picker; 'periodic' = background
@@ -234,6 +237,9 @@ export type HostToWebview =
   // is the model's revised objective. The goal only changes if the user
   // confirms (which sends `updateGoal` back).
   | { type: 'goalRevision'; proposed: string }
+  // Ack that the permission mode was persisted (also syncs the picker when the
+  // change came from another panel or settings.json).
+  | { type: 'permissionMode'; mode: PermissionMode }
   | { type: 'error'; message: string };
 
 // ---- Webview -> Host -----------------------------------------------------
@@ -273,6 +279,9 @@ export type WebviewToHost =
   | { type: 'setProviderEnabled'; id: string; enabled: boolean }
   | { type: 'detectLocalProviders' }
   | { type: 'selectAgent'; agent: string }
+  // Persist a new tool-approval posture (settings) — the server picks it up on
+  // its next spawn; the host acks with 'permissionMode'.
+  | { type: 'setPermissionMode'; mode: PermissionMode }
   | { type: 'requestAgents' }
   /** Scaffold a new agent definition on disk and open it for editing. */
   | { type: 'createAgent'; name: string }

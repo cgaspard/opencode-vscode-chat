@@ -105,7 +105,9 @@ export function activate(context: vscode.ExtensionContext): void {
         // to take effect. (On-disk .mcp.json / .vscode/mcp.json edits are picked
         // up by the "Restart OpenCode Server" command.)
         e.affectsConfiguration('opencodeChat.mcpServers') ||
-        e.affectsConfiguration('mcp')
+        e.affectsConfiguration('mcp') ||
+        // The permission ruleset is baked into the injected config at spawn.
+        e.affectsConfiguration('opencodeChat.permissionMode')
       ) {
         log('relevant configuration changed; restarting server on next use');
         server?.dispose();

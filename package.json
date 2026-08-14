@@ -2,7 +2,7 @@
   "name": "opencode-vscode-chat",
   "displayName": "OpenCode Agent Panel",
   "description": "Bring your own models: an agentic coding panel powered by the open-source OpenCode agent. Add API keys for Anthropic, OpenAI, Google, OpenRouter and 170+ more, and/or point it at a local LM Studio, Ollama or vLLM server.",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "publisher": "cgaspard",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -163,6 +163,21 @@
             "Deepest reasoning the model offers"
           ],
           "description": "Starting reasoning effort for models you haven't set one for. Each model only offers the levels it actually declares (Anthropic exposes low/medium/high/max, OpenAI medium/high/xhigh, most local models on/off), and the picker snaps this preference to the nearest level the selected model supports. Models with no reasoning support hide the control entirely."
+        },
+        "opencodeChat.permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "strict",
+            "bypass"
+          ],
+          "default": "default",
+          "enumDescriptions": [
+            "OpenCode's default posture: most tools run without asking; risky actions (files outside the workspace, .env reads) still prompt.",
+            "Ask for approval before every tool call.",
+            "Never ask — every tool call is auto-approved, including shell commands and file edits. Use only in workspaces you trust."
+          ],
+          "description": "How the agent asks for tool-call approval. Also switchable from the permissions picker in the chat composer. A change restarts the local OpenCode server on its next request, which interrupts any response still streaming."
         },
         "opencodeChat.gpuOffload": {
           "type": "string",

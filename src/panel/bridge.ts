@@ -24,6 +24,7 @@ import {
 } from '../core/goal';
 import { humanizeError, isConnectionError } from '../core/errors';
 import { aggregateUpstream, type ProbeStatus } from '../core/health';
+import { type PermissionMode, normalizePermissionMode } from '../core/permission';
 import {
   LOCAL_PROBE_TARGETS,
   assembleModels,
@@ -618,6 +619,9 @@ export class ChatBridge {
         case 'permission':
           await this.client?.respondPermission(msg.sessionID, msg.permissionID, msg.response);
           break;
+        case 'setPermissionMode':
+          await this.setPermissionMode(msg.mode);
+          break;
         case 'questionReply':
           await this.client?.replyQuestion(msg.requestID, msg.answers);
           break;
@@ -688,6 +692,25 @@ export class ChatBridge {
     }
   }
 
+  /**
+   * Persist a new tool-approval posture. Writing the setting fires the
+   * extension's onDidChangeConfiguration listener, which disposes the managed
+   * server; the next request self-heals onto a fresh spawn with the new
+   * ruleset baked in (the ruleset lives in OPENCODE_CONFIG_CONTENT, so a
+   * respawn is the only way to change it for every session, subagents
+   * included). Workspace-scoped when a folder is open so that trusting a
+   * workspace with "bypass" doesn't silently carry into every other project.
+   */
+  private async setPermissionMode(mode: PermissionMode): Promise<void> {
+    const value = normalizePermissionMode(mode);
+    const target = vscode.workspace.workspaceFolders?.length
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+    await vscode.workspace.getConfiguration('opencodeChat').update('permissionMode', value, target);
+    log(`permission mode set to ${value} (server respawns on next request)`);
+    this.post({ type: 'permissionMode', mode: value });
+  }
+
   private async init(): Promise<ConnectResult> {
     this.startHealthPoll();
     if (this.connecting) {
@@ -738,6 +761,7 @@ export class ChatBridge {
         hasProviders: usable.length > 0,
         minContext: cfg.minContextLength,
         defaultEffort: cfg.defaultThinkingEffort,
+        permissionMode: cfg.permissionMode,
         agents: [],
       });
       this.post({ type: 'status', text: this.offlineReason(upstream, usable), kind: 'warn' });
@@ -766,6 +790,7 @@ export class ChatBridge {
         hasProviders: usable.length > 0,
         minContext: cfg.minContextLength,
         defaultEffort: cfg.defaultThinkingEffort,
+        permissionMode: cfg.permissionMode,
         agents: [],
       });
       return 'failed';
@@ -803,6 +828,7 @@ export class ChatBridge {
       hasProviders: usable.length > 0,
       minContext: cfg.minContextLength,
       defaultEffort: cfg.defaultThinkingEffort,
+      permissionMode: cfg.permissionMode,
       agents,
     });
 

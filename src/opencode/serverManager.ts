@@ -10,6 +10,7 @@ import { clampContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
 import { HOST_XDG_ENV, hostXdgForChildren, snapshotHostXdg, withHostXdg } from '../core/hostenv';
 import { augmentedPath } from '../core/mcp';
+import { opencodePermission } from '../core/permission';
 import type { ProviderConnection } from '../core/providers';
 import type { LocalEndpoints } from '../local/endpoints';
 import { log, logError } from '../logger';
@@ -81,7 +82,7 @@ export class OpencodeServerManager {
    */
   private async currentIdentity(): Promise<string> {
     const conns = await this.registry.enabledWithKeys();
-    return JSON.stringify(
+    return JSON.stringify([
       conns
         .map(({ conn, apiKey }) => [
           conn.providerID,
@@ -91,7 +92,11 @@ export class OpencodeServerManager {
           apiKey ?? null,
         ])
         .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
-    );
+      // permissionMode is part of the identity for the same reason as keys and
+      // urls: it's baked into the config at spawn, so a running instance with a
+      // different mode is stale and must respawn on the next start().
+      getConfig().permissionMode,
+    ]);
   }
 
   /** Start (or return the in-flight start of) the server. Idempotent. */
@@ -382,11 +387,12 @@ export class OpencodeServerManager {
       $schema: 'https://opencode.ai/config.json',
       // Hands the host's real XDG_* values back to the agent's shell commands.
       ...(pluginUrl ? { plugin: [pluginUrl] } : {}),
-      // Let the model ask the user clarifying questions via the built-in
-      // `question` tool. "allow" surfaces the picker immediately (the picker is
-      // the interaction; no redundant approval gate). The bridge relays the
-      // `question.asked` event and replies via the /question API.
-      permission: { question: 'allow' as const },
+      // Tool-approval posture (default / strict / bypass), read fresh so a
+      // mode change applies on restart. Every mode keeps the built-in
+      // `question` tool at "allow": the picker is the interaction (the bridge
+      // relays `question.asked` and replies via the /question API), so an
+      // approval gate in front of it would be redundant.
+      permission: opencodePermission(getConfig().permissionMode),
       agent: {
         build: { prompt: BUILD_PROMPT },
         plan: { prompt: PLAN_PROMPT },
