@@ -2632,7 +2632,11 @@ body.compacting .send-btn {
   flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
 }
-.tool-line.tool-line.collapsed + .tool-detail {
+/* Failure is the one status that still gets a color. */
+.tool-line.status-error .tool-status {
+  color: var(--vscode-errorForeground, #e35d6a);
+}
+.tool-line.collapsed + .tool-detail {
   display: none;
 }
 .tool-detail {
