@@ -214,6 +214,10 @@ const icon = {
   caret: `<svg viewBox="0 0 16 16" width="10" height="10"><path fill="currentColor" d="M4 6l4 4 4-4z"/></svg>`,
   shield: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M8 1.8l5 2.1v3.6c0 3.2-2.1 5.7-5 7.1-2.9-1.4-5-3.9-5-7.1V3.9z"/></svg>`,
   check: `<svg viewBox="0 0 16 16" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M2.8 8.4l3.3 3.3 7-7"/></svg>`,
+  zap: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M9.5 1 3 9h3.5L6 15l6.5-8H9z"/></svg>`,
+  help: `<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="currentColor" d="M7.3 9.6c0-.8.2-1.3.9-1.8.6-.4.9-.7.9-1.3 0-.7-.5-1.1-1.2-1.1-.6 0-1.1.3-1.4.9l-1.1-.6c.5-1 1.4-1.5 2.6-1.5 1.4 0 2.4.8 2.4 2.1 0 .9-.4 1.4-1.1 1.9-.6.4-.8.7-.8 1.4zM8 12.2a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/></svg>`,
+  lock: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M5 7V4.8a3 3 0 0 1 6 0V7"/><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/></svg>`,
+  unlock: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M11 7V4.8a3 3 0 0 0-5.9-.7"/><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/></svg>`,
   checklist: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 3h2v2H2zM6 3.5h8v1H6zM2 7h2v2H2zM6 7.5h8v1H6zM2 11h2v2H2zM6 11.5h8v1H6z"/></svg>`,
   // Flat monochrome capability glyphs for the model list (currentColor, no fill colors).
   eye: `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/></svg>`,
@@ -248,9 +252,9 @@ let goalTicker: ReturnType<typeof setInterval> | undefined;
 let behaviorBtn!: HTMLButtonElement;
 let behaviorMenu!: HTMLElement;
 let behaviorBtnLabel!: HTMLElement;
-let agentMenuList!: HTMLElement;
+let behaviorBtnIco!: HTMLElement;
+let agentChips!: HTMLElement;
 let permMenuList!: HTMLElement;
-let permShield!: HTMLButtonElement;
 let addBtn!: HTMLButtonElement;
 let addMenu!: HTMLElement;
 let historyOverlay!: HTMLElement;
@@ -319,6 +323,7 @@ function build(): void {
         <div class="composer-row">
           <div class="composer-tools">
             <button id="btn-add" class="tool-pill icon-only" title="Add context — attach an image, include the open file">${icon.plus}</button>
+            <button id="btn-help" class="tool-pill icon-only" title="Slash commands — everything you can type">${icon.help}</button>
           </div>
           <div class="composer-right">
             <button id="model-btn" class="model-btn" title="Model &amp; providers — switch, load / eject">
@@ -326,11 +331,11 @@ function build(): void {
               <span class="model-btn-label">Model</span>
               <span class="caret">${icon.caret}</span>
             </button>
-            <button id="behavior-btn" class="model-btn behavior-btn" title="Agent · thinking · permissions">
-              <span class="model-btn-label" id="behavior-btn-label">build</span>
+            <button id="behavior-btn" class="model-btn behavior-btn" title="Permissions · agent · thinking">
+              <span class="behavior-ico" id="behavior-btn-ico">${icon.zap}</span>
+              <span class="model-btn-label" id="behavior-btn-label">Auto</span>
               <span class="caret">${icon.caret}</span>
             </button>
-            <button id="perm-shield" class="tool-pill icon-only perm-shield hidden">${icon.shield}</button>
             <button id="send" class="send-btn" title="Send">${icon.send}</button>
           </div>
         </div>
@@ -361,18 +366,21 @@ function build(): void {
       </div>
     </div>
     <div id="behavior-menu" class="model-menu hidden">
-      <div class="model-menu-head"><span>Agent</span></div>
-      <div id="agent-menu-list" class="model-menu-list"></div>
-      <div class="model-menu-foot" id="effort-foot">
-        <span class="ctx-foot-label">Thinking</span>
-        <div id="effort-presets" class="ctx-presets"></div>
+      <div class="menu-inline">
+        <span class="menu-inline-label">Agent</span>
+        <div id="agent-chips" class="ctx-presets"></div>
+      </div>
+      <div class="menu-sep"></div>
+      <div id="perm-menu-list" class="model-menu-list"></div>
+      <div class="menu-sep"></div>
+      <div id="effort-foot">
+        <div class="menu-inline">
+          <span class="menu-inline-label" id="effort-label">Thinking</span>
+          <div id="effort-presets" class="effort-dots"></div>
+        </div>
         <span class="effort-note" id="effort-note"></span>
         <button class="menu-row" id="toggle-reasoning"><span>Show reasoning</span><span class="menu-check">${icon.check}</span></button>
       </div>
-      <div class="model-menu-head"><span>Permissions</span></div>
-      <div id="perm-menu-list" class="model-menu-list"></div>
-      <div class="menu-sep"></div>
-      <button class="menu-row" id="menu-goal">${icon.target}<span>Pursue a goal…</span></button>
     </div>
     <div id="add-menu" class="model-menu hidden">
       <button class="menu-row" id="menu-attach">${icon.paperclip}<span>Attach image…</span></button>
@@ -485,11 +493,8 @@ function build(): void {
   goalMetaEl = document.getElementById('goal-meta')!;
   goalPauseBtn = document.getElementById('goal-pause') as HTMLButtonElement;
 
-  // Goal bar controls + the behavior-menu Goal entry.
-  document.getElementById('menu-goal')!.addEventListener('click', () => {
-    closeBehaviorMenu();
-    prefillGoalInput(state.activeGoal?.objective ?? '');
-  });
+  // Goal bar controls. Starting a goal is /goal (listed in the slash menu and
+  // the ? help); once one runs, the goal bar carries the controls.
   document.getElementById('goal-edit')!.addEventListener('click', () => {
     prefillGoalInput(state.activeGoal?.objective ?? '');
   });
@@ -504,9 +509,9 @@ function build(): void {
   behaviorBtn = document.getElementById('behavior-btn') as HTMLButtonElement;
   behaviorMenu = document.getElementById('behavior-menu')!;
   behaviorBtnLabel = document.getElementById('behavior-btn-label')!;
-  agentMenuList = document.getElementById('agent-menu-list')!;
+  behaviorBtnIco = document.getElementById('behavior-btn-ico')!;
+  agentChips = document.getElementById('agent-chips')!;
   permMenuList = document.getElementById('perm-menu-list')!;
-  permShield = document.getElementById('perm-shield') as HTMLButtonElement;
   addBtn = document.getElementById('btn-add') as HTMLButtonElement;
   addMenu = document.getElementById('add-menu')!;
   historyOverlay = document.getElementById('history-overlay')!;
@@ -617,6 +622,11 @@ function build(): void {
     e.stopPropagation();
     toggleMenu(addMenu, addBtn, 260);
   });
+  // ? — the same screen /help prints, one click away for people who would
+  // never think to type a slash.
+  document.getElementById('btn-help')!.addEventListener('click', () => {
+    helpCommand();
+  });
   document.getElementById('menu-attach')!.addEventListener('click', () => {
     addMenu.classList.add('hidden');
     fileInput.click();
@@ -629,12 +639,8 @@ function build(): void {
     renderMeter();
   });
 
-  // Behavior menu (agent · thinking · permissions) + the bypass shield.
+  // Behavior menu (permissions · agent · thinking).
   behaviorBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleMenu(behaviorMenu, behaviorBtn, 300);
-  });
-  permShield.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMenu(behaviorMenu, behaviorBtn, 300);
   });
@@ -770,8 +776,7 @@ function build(): void {
     if (
       !behaviorMenu.classList.contains('hidden') &&
       !behaviorMenu.contains(t) &&
-      !behaviorBtn.contains(t) &&
-      !permShield.contains(t)
+      !behaviorBtn.contains(t)
     ) {
       closeBehaviorMenu();
     }
@@ -833,28 +838,38 @@ function closeBehaviorMenu(): void {
   behaviorMenu.classList.add('hidden');
 }
 
+/** The three permission modes: menu rows (Claude-Code-style icon + name +
+ * description) and the composer chip's identity. */
+const PERM_MODES: Array<{
+  value: PermissionMode;
+  label: string;
+  chip: string;
+  ico: 'zap' | 'lock' | 'unlock';
+  meta: string;
+}> = [
+  { value: 'default', label: 'Auto', chip: 'Auto', ico: 'zap', meta: 'safe actions run on their own, risky ones ask you' },
+  { value: 'strict', label: 'Manual', chip: 'Manual', ico: 'lock', meta: 'every action asks you first' },
+  { value: 'bypass', label: 'Bypass', chip: 'Bypass', ico: 'unlock', meta: 'nothing asks — everything runs' },
+];
+
 /**
  * Reflect the host-owned permission mode: check the matching row in the
- * behavior menu, and pin the shield by send whenever the mode isn't the
- * default — the bypass state must never be invisible.
+ * behavior menu, and put the mode on the composer chip itself — the most
+ * important state rides the chip, and bypass is never invisible.
  */
 function renderPermissionMode(): void {
   state.permissionMode = state.permissionMode ?? 'default';
   const mode = state.permissionMode;
-  const rows: Array<{ value: PermissionMode; label: string; meta: string }> = [
-    { value: 'default', label: 'Ask: risky only', meta: 'default — asks before risky commands' },
-    { value: 'strict', label: 'Ask: always', meta: 'asks before every tool call' },
-    { value: 'bypass', label: 'Bypass all', meta: 'runs everything without asking' },
-  ];
   permMenuList.innerHTML = '';
-  for (const rowDef of rows) {
+  for (const rowDef of PERM_MODES) {
     const row = document.createElement('div');
     row.className =
-      'model-row menu-pick' +
+      'model-row menu-pick perm-row' +
       (rowDef.value === mode ? ' active' : '') +
       (rowDef.value === 'bypass' ? ' warnrow' : '');
     row.dataset.mode = rowDef.value;
     row.innerHTML = `
+      <span class="perm-ico">${icon[rowDef.ico]}</span>
       <span class="model-info">
         <span class="model-name">${rowDef.label}</span>
         <span class="model-meta${rowDef.value === 'bypass' ? ' warntext' : ''}">${rowDef.meta}</span>
@@ -871,12 +886,7 @@ function renderPermissionMode(): void {
     });
     permMenuList.appendChild(row);
   }
-  permShield.classList.toggle('hidden', mode === 'default');
-  permShield.classList.toggle('bypass', mode === 'bypass');
-  permShield.title =
-    mode === 'bypass'
-      ? 'Permissions: Bypass all — every tool call is auto-approved. Click to change.'
-      : 'Permissions: Ask always — every tool call needs approval. Click to change.';
+  renderBehaviorLabel();
 }
 
 function permissionModeChip(mode: PermissionMode): string {
@@ -1135,11 +1145,38 @@ function showSkills(skills: UiSkill[]): void {
   forceScrollToBottom();
 }
 
+/**
+ * The /help screen (also the composer's ? button): a formatted panel like the
+ * MCP status one — built-ins, server commands and skills grouped, monospace
+ * command column, long skill descriptions clamped with the full text on hover.
+ */
 function helpCommand(): void {
-  const lines = allCommands()
-    .map((c) => `${c.name} — ${c.hint}${c.server?.source === 'skill' ? ' (skill)' : ''}`)
-    .join('\n');
-  addSysChip(`Slash commands:\n${lines}`);
+  const cmds = allCommands();
+  const groups: Array<{ title: string; items: SlashCommand[] }> = [
+    { title: 'Built-in', items: cmds.filter((c) => !c.server) },
+    { title: 'From OpenCode', items: cmds.filter((c) => c.server && c.server.source !== 'skill') },
+    { title: 'Skills', items: cmds.filter((c) => c.server?.source === 'skill') },
+  ];
+  const el = document.createElement('div');
+  el.className = 'sys-chip help-panel';
+  let html = '<div class="help-head">Slash commands</div>';
+  for (const g of groups) {
+    if (!g.items.length) {
+      continue;
+    }
+    html += `<div class="help-group">${g.title}</div>`;
+    for (const c of g.items) {
+      html += `
+        <div class="help-row">
+          <code>${escapeHtml(c.name)}</code>
+          <span class="help-hint" title="${escapeHtml(c.hint)}">${escapeHtml(c.hint)}</span>
+        </div>`;
+    }
+  }
+  el.innerHTML = html;
+  messagesEl.appendChild(el);
+  toggleWelcome();
+  scrollToBottom();
 }
 
 // Render the MCP server status as an inline panel in the message stream — one
@@ -1473,35 +1510,37 @@ function applyEffort(): void {
 }
 
 /**
- * The behavior chip label: "<agent> · <thinking level>". The level segment is
- * dropped for models that report no reasoning support, mirroring the old
- * pill's hide-entirely behavior.
+ * The behavior chip is permission-forward (like Claude Code's mode chip):
+ * mode icon + short mode label, warning-colored on bypass. Agent and thinking
+ * live one click away in the menu; the tooltip carries the full picture.
  */
 function renderBehaviorLabel(): void {
   if (!behaviorBtnLabel) {
     return;
   }
+  const mode = state.permissionMode ?? 'default';
+  const def = PERM_MODES.find((m) => m.value === mode) ?? PERM_MODES[0];
+  behaviorBtnIco.innerHTML = icon[def.ico];
+  behaviorBtnLabel.textContent = def.chip;
+  behaviorBtn.classList.toggle('bypass', mode === 'bypass');
   const reasoning = currentReasoning();
   const levels = levelsForModel(reasoning);
-  const agent = state.agent || 'build';
   const level = currentEffort();
-  const label = levels.length === 0 ? agent : `${agent} · ${levelLabel(level, reasoning)}`;
-  behaviorBtnLabel.textContent = label;
   behaviorBtn.title =
-    'Agent · thinking · permissions' +
-    (levels.length
-      ? ` — thinking: ${
-          level === 'auto' ? "Auto (the model's own default)" : levelLabel(level, reasoning)
-        }${reasoning === undefined ? ' (support unknown for this model)' : ''}`
-      : '');
+    `Permissions: ${def.label} — ${def.meta}. Agent: ${state.agent || 'build'}.` +
+    (levels.length ? ` Thinking: ${levelLabel(level, reasoning)}.` : '');
 }
 
-/** Effort selector in the behavior menu's Thinking section, mirroring the
- * context presets. */
+/**
+ * Thinking control in the behavior menu: one row — "Thinking (<level>)" label
+ * + a discrete dot slider (Claude-Code-style). Each dot is a button for one of
+ * the levels this model actually offers; the current dot is enlarged.
+ */
 function renderEffortPresets(): void {
   const el = document.getElementById('effort-presets');
   const foot = document.getElementById('effort-foot');
   const note = document.getElementById('effort-note');
+  const label = document.getElementById('effort-label');
   if (!el || !foot) {
     return;
   }
@@ -1519,17 +1558,22 @@ function renderEffortPresets(): void {
           : '';
   }
   const active = currentEffort();
+  if (label) {
+    label.textContent = `Thinking (${levelLabel(active, reasoning)})`;
+  }
   el.innerHTML = '';
   for (const lvl of levels) {
     const b = document.createElement('button');
-    b.className = 'ctx-preset' + (lvl === active ? ' active' : '');
-    b.textContent = levelLabel(lvl, reasoning);
+    b.className = 'effort-dot' + (lvl === active ? ' active' : '');
+    b.dataset.level = lvl;
+    const name = levelLabel(lvl, reasoning);
+    b.setAttribute('aria-label', name);
     b.title =
       lvl === 'auto'
-        ? "Use the model's own default"
+        ? "Auto — use the model's own default"
         : lvl === 'off'
-          ? 'Suppress reasoning entirely'
-          : `Reasoning effort: ${levelLabel(lvl, reasoning)}`;
+          ? 'Off — suppress reasoning entirely'
+          : name;
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       setEffort(lvl);
@@ -1780,9 +1824,9 @@ function closeLightbox(): void {
 // Model / agent pickers
 // ---------------------------------------------------------------------------
 /**
- * Populate the Agent section of the behavior menu from the server roster. Only
- * pickable agents appear (mode primary/all); subagents are delegation-only and
- * would do nothing here.
+ * Populate the Agent chips row of the behavior menu from the server roster.
+ * Only pickable agents appear (mode primary/all); subagents are
+ * delegation-only and would do nothing here.
  */
 function renderAgents(): void {
   const agents = state.agents.length
@@ -1794,19 +1838,18 @@ function renderAgents(): void {
     state.agent = wanted;
     post({ type: 'selectAgent', agent: wanted });
   }
-  agentMenuList.innerHTML = '';
+  agentChips.innerHTML = '';
   for (const a of agents) {
-    const row = document.createElement('div');
-    row.className = 'model-row menu-pick' + (a.name === wanted ? ' active' : '');
-    row.dataset.agent = a.name;
+    const chip = document.createElement('button');
+    chip.className = 'ctx-preset' + (a.name === wanted ? ' active' : '');
+    chip.dataset.agent = a.name;
+    chip.textContent = agentLabel(a as AgentInfo);
     const tip = agentTooltip(a as AgentInfo);
-    row.innerHTML = `
-      <span class="model-info">
-        <span class="model-name">${escapeHtml(agentLabel(a as AgentInfo))}</span>
-        ${tip ? `<span class="model-meta">${escapeHtml(tip)}</span>` : ''}
-      </span>
-      ${a.name === wanted ? `<span class="menu-check">${icon.check}</span>` : ''}`;
-    row.addEventListener('click', () => {
+    if (tip) {
+      chip.title = tip;
+    }
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (state.agent !== a.name) {
         state.agent = a.name;
         post({ type: 'selectAgent', agent: a.name });
@@ -1814,7 +1857,7 @@ function renderAgents(): void {
         renderMeter(); // agent overhead feeds the token estimate
       }
     });
-    agentMenuList.appendChild(row);
+    agentChips.appendChild(chip);
   }
   renderBehaviorLabel();
 }

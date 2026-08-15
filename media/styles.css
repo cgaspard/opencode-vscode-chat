@@ -2399,9 +2399,9 @@ body.compacting .send-btn {
 .model-row.warnrow .model-name {
   color: var(--vscode-editorWarning-foreground, #d7a23b);
 }
-/* The behavior menu stacks three sections; cap section lists so the whole menu
-   fits a short panel and scrolls internally instead of overflowing it. */
-#agent-menu-list,
+/* The behavior menu stacks three sections; cap the permission list so the
+   whole menu fits a short panel and scrolls internally instead of overflowing
+   it. */
 #perm-menu-list {
   max-height: 180px;
   overflow-y: auto;
@@ -2419,5 +2419,152 @@ body.compacting .send-btn {
 .spinner.hidden,
 .provider-add.hidden,
 .menu-row.hidden {
+  display: none;
+}
+
+/* ---- Behavior menu, Claude-style compact layout --------------------------- */
+/* One-line section: label on the left, chips or the effort slider right. */
+.menu-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.menu-inline-label {
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+}
+.menu-inline .ctx-presets {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+/* Permission rows carry a leading mode icon, like Claude Code's mode list. */
+.perm-row .perm-ico {
+  display: inline-flex;
+  color: var(--vscode-descriptionForeground);
+  flex: none;
+}
+.perm-row.active .perm-ico {
+  color: var(--vscode-foreground);
+}
+.perm-row.warnrow .perm-ico {
+  color: var(--vscode-editorWarning-foreground, #d7a23b);
+}
+/* Discrete thinking slider: a track of dot-buttons, current one enlarged. */
+.effort-dots {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: none;
+}
+.effort-dot {
+  position: relative;
+  width: 26px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* the connecting track */
+.effort-dot::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+}
+.effort-dot:first-child::before {
+  left: 50%;
+}
+.effort-dot:last-child::before {
+  right: 50%;
+}
+/* the dot itself */
+.effort-dot::after {
+  content: '';
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+  transition: width 0.12s ease, height 0.12s ease, background 0.12s ease;
+}
+.effort-dot:hover::after {
+  background: var(--vscode-foreground);
+}
+.effort-dot.active::after {
+  width: 13px;
+  height: 13px;
+  background: var(--vscode-foreground);
+  box-shadow: 0 0 0 1px var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
+}
+.effort-dot:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, var(--accent));
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+/* Behavior chip: permission-forward — icon + short mode label. */
+.behavior-btn .behavior-ico {
+  display: inline-flex;
+  flex: none;
+}
+.behavior-btn.bypass {
+  color: var(--vscode-editorWarning-foreground, #d7a23b);
+}
+.behavior-btn.bypass:hover {
+  color: var(--vscode-editorWarning-foreground, #d7a23b);
+}
+
+/* ---- /help panel: grouped, scannable command list -------------------------- */
+.help-panel {
+  align-self: stretch;
+  text-align: left;
+  padding: 10px 14px 12px;
+}
+.help-head {
+  font-weight: 600;
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+.help-group {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+  margin: 10px 0 3px;
+}
+.help-row {
+  display: grid;
+  grid-template-columns: fit-content(220px) 1fr;
+  gap: 3px 12px;
+  padding: 2.5px 0;
+  align-items: baseline;
+}
+.help-row code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11.5px;
+  color: var(--vscode-textPreformat-foreground, var(--vscode-foreground));
+  white-space: nowrap;
+}
+.help-hint {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The Thinking block hides for models with no reasoning support; it lost the
+   .model-menu-foot class in the v2 layout, so it needs its own hidden rule. */
+#effort-foot.hidden {
   display: none;
 }
