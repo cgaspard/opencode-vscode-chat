@@ -212,6 +212,12 @@ const icon = {
   paperclip: `<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M11.5 6.5 6.8 11.2a2 2 0 0 1-2.8-2.8l5-5a3 3 0 0 1 4.2 4.2l-5.1 5.1a4 4 0 0 1-5.6-5.6l4.8-4.8"/></svg>`,
   refresh: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M13.65 3.85A6 6 0 1 0 14 8h-1.5a4.5 4.5 0 1 1-1.2-3.35L9 6.5h5V1.5z"/></svg>`,
   caret: `<svg viewBox="0 0 16 16" width="10" height="10"><path fill="currentColor" d="M4 6l4 4 4-4z"/></svg>`,
+  shield: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M8 1.8l5 2.1v3.6c0 3.2-2.1 5.7-5 7.1-2.9-1.4-5-3.9-5-7.1V3.9z"/></svg>`,
+  check: `<svg viewBox="0 0 16 16" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M2.8 8.4l3.3 3.3 7-7"/></svg>`,
+  zap: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M9.5 1 3 9h3.5L6 15l6.5-8H9z"/></svg>`,
+  help: `<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path fill="currentColor" d="M7.3 9.6c0-.8.2-1.3.9-1.8.6-.4.9-.7.9-1.3 0-.7-.5-1.1-1.2-1.1-.6 0-1.1.3-1.4.9l-1.1-.6c.5-1 1.4-1.5 2.6-1.5 1.4 0 2.4.8 2.4 2.1 0 .9-.4 1.4-1.1 1.9-.6.4-.8.7-.8 1.4zM8 12.2a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/></svg>`,
+  lock: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M5 7V4.8a3 3 0 0 1 6 0V7"/><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/></svg>`,
+  unlock: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="1.3" d="M11 7V4.8a3 3 0 0 0-5.9-.7"/><rect x="3.5" y="7" width="9" height="6.5" rx="1.2" fill="currentColor"/></svg>`,
   checklist: `<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 3h2v2H2zM6 3.5h8v1H6zM2 7h2v2H2zM6 7.5h8v1H6zM2 11h2v2H2zM6 11.5h8v1H6z"/></svg>`,
   // Flat monochrome capability glyphs for the model list (currentColor, no fill colors).
   eye: `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/></svg>`,
@@ -235,38 +241,40 @@ let sendBtn!: HTMLButtonElement;
 let modelBtn!: HTMLButtonElement;
 let modelMenu!: HTMLElement;
 let modelMenuList!: HTMLElement;
-let serverBtn!: HTMLButtonElement;
-let serverMenu!: HTMLElement;
 let serverMenuList!: HTMLElement;
 let connBanner!: HTMLElement;
-let ctxFileBtn!: HTMLButtonElement;
-let ctxFileName!: HTMLElement;
 let attachmentsEl!: HTMLElement;
 let goalBarEl!: HTMLElement;
 let goalTextEl!: HTMLElement;
 let goalMetaEl!: HTMLElement;
 let goalPauseBtn!: HTMLButtonElement;
 let goalTicker: ReturnType<typeof setInterval> | undefined;
-let overflowBtn!: HTMLButtonElement;
-let overflowMenuEl!: HTMLElement;
-/** Composer controls that may collapse into the ⋯ menu, in hide-order (first
- * entries overflow first). `anchor` marks each control's home position so it
- * can be restored to exactly where it came from when space returns. */
-let overflowItems: Array<{ el: HTMLElement; home: HTMLElement; anchor: Node }> = [];
-let agentSelect!: HTMLSelectElement;
-let permSelect!: HTMLSelectElement;
-let statusEl!: HTMLElement;
+let behaviorBtn!: HTMLButtonElement;
+let behaviorMenu!: HTMLElement;
+let behaviorBtnLabel!: HTMLElement;
+let behaviorBtnIco!: HTMLElement;
+let agentChips!: HTMLElement;
+let permMenuList!: HTMLElement;
+let addBtn!: HTMLButtonElement;
+let addMenu!: HTMLElement;
 let historyOverlay!: HTMLElement;
 let historyList!: HTMLElement;
 let thumbsEl!: HTMLElement;
-let thinkBtn!: HTMLButtonElement;
 let fileInput!: HTMLInputElement;
 let ctxMeterEl!: HTMLElement;
 let ctxFillEl!: HTMLElement;
 let ctxLabelEl!: HTMLElement;
-let workingEl!: HTMLElement;
-let workingLabelEl!: HTMLElement;
-let workingElapsedEl!: HTMLElement;
+// Merged activity strip (#activity): while a turn runs it carries the working
+// label + elapsed/tok-s ticker; transient notices (steering ack, goal progress,
+// connection warnings) take the same line over. One strip, never a stack.
+let activityEl!: HTMLElement;
+let activitySpinner!: HTMLElement;
+let activityLabelEl!: HTMLElement;
+let activityExtraEl!: HTMLElement;
+let activityStatus = ''; // transient notice text ('' = none)
+let activityKind: 'info' | 'warn' | 'error' | '' = '';
+let workingActive = false;
+let workingLabel = '';
 let workingStart = 0;
 let workingTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -287,15 +295,10 @@ function build(): void {
         <div class="welcome-hint">Pick a model below and describe a task.</div>
       </div>
     </div>
-    <div id="status" class="status"></div>
-    <div id="working" class="working hidden">
-      <span class="spinner"></span>
-      <span class="working-label">Working…</span>
-      <span class="working-elapsed"></span>
-    </div>
-    <div id="ctx-meter" class="ctx-meter" title="Context window usage">
-      <div class="ctx-bar"><div class="ctx-fill"></div></div>
-      <span class="ctx-label"></span>
+    <div id="activity" class="activity">
+      <span class="spinner hidden"></span>
+      <span class="activity-label"></span>
+      <span class="activity-extra"></span>
     </div>
     <div class="composer">
       <div id="goal-bar" class="goal-bar hidden">
@@ -310,6 +313,8 @@ function build(): void {
         </span>
       </div>
       <div class="composer-box">
+        <div id="ctx-meter" class="ctx-edge" title="Context window usage"><div class="ctx-fill"></div></div>
+        <span class="ctx-label" id="ctx-tip"></span>
         <div id="slash-menu" class="slash-menu hidden"></div>
         <div id="attachments" class="attachments hidden">
           <div id="thumbs" class="thumbs"></div>
@@ -317,28 +322,20 @@ function build(): void {
         <textarea id="input" rows="1" placeholder="Ask anything, paste an image, or describe a task…"></textarea>
         <div class="composer-row">
           <div class="composer-tools">
-            <button id="server-btn" class="tool-pill" title="Providers — add API keys or local servers">
-              <span class="model-dot"></span><span id="server-name">Providers</span>
-            </button>
-            <button id="btn-attach" class="tool-pill icon-only" title="Attach image">${icon.paperclip}</button>
-            <button id="btn-think" class="tool-pill" title="Toggle thinking">${icon.brain}<span>Thinking</span></button>
-            <button id="btn-goal" class="tool-pill icon-only" title="Pursue a goal until it's met">${icon.target}</button>
-            <span class="tool-sep" id="tool-sep"></span>
-            <button id="ctxfile" class="ctxref hidden" title="Include the open file as context">${icon.file}<span id="ctxfile-name"></span></button>
+            <button id="btn-add" class="tool-pill icon-only" title="Add context — attach an image, include the open file">${icon.plus}</button>
+            <button id="btn-help" class="tool-pill icon-only" title="Slash commands — everything you can type">${icon.help}</button>
           </div>
           <div class="composer-right">
-            <button id="overflow-btn" class="tool-pill icon-only hidden" title="More options">${icon.dots}</button>
-            <button id="model-btn" class="model-btn" title="Model — load / eject">
+            <button id="model-btn" class="model-btn" title="Model &amp; providers — switch, load / eject">
               <span class="model-dot"></span>
               <span class="model-btn-label">Model</span>
               <span class="caret">${icon.caret}</span>
             </button>
-            <select id="perm-select" class="picker perm" title="Permissions — when the agent asks for approval">
-              <option value="default">Ask: risky only</option>
-              <option value="strict">Ask: always</option>
-              <option value="bypass">Bypass all</option>
-            </select>
-            <select id="agent-select" class="picker agent" title="Agent — who drives the turn"></select>
+            <button id="behavior-btn" class="model-btn behavior-btn" title="Permissions · agent · thinking">
+              <span class="behavior-ico" id="behavior-btn-ico">${icon.zap}</span>
+              <span class="model-btn-label" id="behavior-btn-label">Auto</span>
+              <span class="caret">${icon.caret}</span>
+            </button>
             <button id="send" class="send-btn" title="Send">${icon.send}</button>
           </div>
         </div>
@@ -346,6 +343,17 @@ function build(): void {
       <input id="file-input" type="file" accept="image/*" multiple hidden />
     </div>
     <div id="model-menu" class="model-menu hidden">
+      <div class="model-menu-head">
+        <span>Providers</span>
+        <button id="provider-detect" class="icon-btn" title="Scan for local servers (LM Studio, Ollama, vLLM)">${icon.refresh}</button>
+      </div>
+      <div id="server-menu-list" class="provider-list server-section"></div>
+      <div id="detected-list" class="detected-list hidden"></div>
+      <button class="menu-row menu-add-row" id="provider-add-toggle">${icon.plus}<span>Add provider…</span></button>
+      <div class="provider-add hidden" id="provider-add-form">
+        <input id="catalog-search" class="server-input" placeholder="Search providers and local servers…" />
+        <div id="catalog-list" class="catalog-list"></div>
+      </div>
       <div class="model-menu-head">
         <span>Models</span>
         <button id="model-refresh" class="icon-btn" title="Rescan models">${icon.refresh}</button>
@@ -356,25 +364,28 @@ function build(): void {
         <div id="ctx-presets" class="ctx-presets"></div>
         <span class="effort-note" id="ctx-note"></span>
       </div>
-      <div class="model-menu-foot" id="effort-foot">
-        <span class="ctx-foot-label">Reasoning effort</span>
-        <div id="effort-presets" class="ctx-presets"></div>
+    </div>
+    <div id="behavior-menu" class="model-menu hidden">
+      <div class="menu-inline">
+        <span class="menu-inline-label">Agent</span>
+        <div id="agent-chips" class="ctx-presets"></div>
+      </div>
+      <div class="menu-sep"></div>
+      <div id="perm-menu-list" class="model-menu-list"></div>
+      <div class="menu-sep"></div>
+      <div id="effort-foot">
+        <div class="menu-inline">
+          <span class="menu-inline-label" id="effort-label">Thinking</span>
+          <div id="effort-presets" class="effort-dots"></div>
+        </div>
         <span class="effort-note" id="effort-note"></span>
+        <button class="menu-row" id="toggle-reasoning"><span>Show reasoning</span><span class="menu-check">${icon.check}</span></button>
       </div>
     </div>
-    <div id="overflow-menu" class="model-menu overflow-menu hidden"></div>
-    <div id="server-menu" class="model-menu provider-menu hidden">
-      <div class="model-menu-head">
-        <span>Providers</span>
-        <button id="provider-detect" class="icon-btn" title="Scan for local servers (LM Studio, Ollama, vLLM)">${icon.refresh}</button>
-      </div>
-      <div id="server-menu-list" class="provider-list"></div>
-      <div id="detected-list" class="detected-list hidden"></div>
-      <div class="provider-add">
-        <span class="ctx-foot-label">Add a provider</span>
-        <input id="catalog-search" class="server-input" placeholder="Search providers and local servers…" />
-        <div id="catalog-list" class="catalog-list"></div>
-      </div>
+    <div id="add-menu" class="model-menu hidden">
+      <button class="menu-row" id="menu-attach">${icon.paperclip}<span>Attach image…</span></button>
+      <button class="menu-row hidden" id="menu-ctxfile">${icon.file}<span class="menu-row-text"><span id="menu-ctxfile-name">Include open file</span><span class="menu-row-meta" id="menu-ctxfile-meta"></span></span><span class="menu-check">${icon.check}</span></button>
+      <div class="menu-row info hidden" id="menu-ctxsel">${icon.file}<span class="menu-row-text"><span>Selection attached</span><span class="menu-row-meta" id="menu-ctxsel-meta"></span></span></div>
     </div>
     <div id="key-overlay" class="overlay hidden">
       <div class="overlay-card">
@@ -474,22 +485,16 @@ function build(): void {
   modelBtn = document.getElementById('model-btn') as HTMLButtonElement;
   modelMenu = document.getElementById('model-menu')!;
   modelMenuList = document.getElementById('model-menu-list')!;
-  serverBtn = document.getElementById('server-btn') as HTMLButtonElement;
-  serverMenu = document.getElementById('server-menu')!;
   serverMenuList = document.getElementById('server-menu-list')!;
   connBanner = document.getElementById('conn-banner')!;
-  ctxFileBtn = document.getElementById('ctxfile') as HTMLButtonElement;
-  ctxFileName = document.getElementById('ctxfile-name')!;
   attachmentsEl = document.getElementById('attachments')!;
   goalBarEl = document.getElementById('goal-bar')!;
   goalTextEl = document.getElementById('goal-text')!;
   goalMetaEl = document.getElementById('goal-meta')!;
   goalPauseBtn = document.getElementById('goal-pause') as HTMLButtonElement;
 
-  // Goal bar controls + the composer Goal button.
-  document.getElementById('btn-goal')!.addEventListener('click', () => {
-    prefillGoalInput(state.activeGoal?.objective ?? '');
-  });
+  // Goal bar controls. Starting a goal is /goal (listed in the slash menu and
+  // the ? help); once one runs, the goal bar carries the controls.
   document.getElementById('goal-edit')!.addEventListener('click', () => {
     prefillGoalInput(state.activeGoal?.objective ?? '');
   });
@@ -501,40 +506,25 @@ function build(): void {
   });
   document.getElementById('goal-clear')!.addEventListener('click', () => post({ type: 'clearGoal' }));
 
-  // Composer overflow: lower-priority controls collapse into the ⋯ menu when
-  // the panel is narrow, and return when there's room — nothing gets pushed
-  // off-screen. Hide-order: first entries collapse first.
-  overflowBtn = document.getElementById('overflow-btn') as HTMLButtonElement;
-  overflowMenuEl = document.getElementById('overflow-menu')!;
-  overflowItems = ['perm-select', 'server-btn', 'agent-select', 'btn-goal', 'btn-think', 'tool-sep', 'btn-attach', 'ctxfile']
-    .map((id) => document.getElementById(id))
-    .filter((el): el is HTMLElement => !!el)
-    .map((el) => {
-      const anchor = document.createComment('overflow-home');
-      el.parentElement!.insertBefore(anchor, el);
-      return { el, home: el.parentElement as HTMLElement, anchor };
-    });
-  overflowBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleOverflowMenu();
-  });
-  const composerRow = document.querySelector('.composer-row') as HTMLElement;
-  new ResizeObserver(() => layoutComposer()).observe(composerRow);
-  layoutComposer();
-  agentSelect = document.getElementById('agent-select') as HTMLSelectElement;
-  permSelect = document.getElementById('perm-select') as HTMLSelectElement;
-  statusEl = document.getElementById('status')!;
+  behaviorBtn = document.getElementById('behavior-btn') as HTMLButtonElement;
+  behaviorMenu = document.getElementById('behavior-menu')!;
+  behaviorBtnLabel = document.getElementById('behavior-btn-label')!;
+  behaviorBtnIco = document.getElementById('behavior-btn-ico')!;
+  agentChips = document.getElementById('agent-chips')!;
+  permMenuList = document.getElementById('perm-menu-list')!;
+  addBtn = document.getElementById('btn-add') as HTMLButtonElement;
+  addMenu = document.getElementById('add-menu')!;
   historyOverlay = document.getElementById('history-overlay')!;
   historyList = document.getElementById('history-list')!;
   thumbsEl = document.getElementById('thumbs')!;
-  thinkBtn = document.getElementById('btn-think') as HTMLButtonElement;
   fileInput = document.getElementById('file-input') as HTMLInputElement;
   ctxMeterEl = document.getElementById('ctx-meter')!;
   ctxFillEl = ctxMeterEl.querySelector('.ctx-fill') as HTMLElement;
-  ctxLabelEl = ctxMeterEl.querySelector('.ctx-label') as HTMLElement;
-  workingEl = document.getElementById('working')!;
-  workingLabelEl = workingEl.querySelector('.working-label') as HTMLElement;
-  workingElapsedEl = workingEl.querySelector('.working-elapsed') as HTMLElement;
+  ctxLabelEl = document.getElementById('ctx-tip')!;
+  activityEl = document.getElementById('activity')!;
+  activitySpinner = activityEl.querySelector('.spinner') as HTMLElement;
+  activityLabelEl = activityEl.querySelector('.activity-label') as HTMLElement;
+  activityExtraEl = activityEl.querySelector('.activity-extra') as HTMLElement;
 
   // Floating top-right actions (mirror the old native title-bar buttons).
   document.getElementById('ta-new')!.addEventListener('click', () => post({ type: 'newChat' }));
@@ -618,34 +608,44 @@ function build(): void {
   });
   inputEl.addEventListener('blur', () => closeSlashMenu());
 
-  // Effort cycler. Plain click steps through the levels this model supports;
-  // alt-click toggles whether reasoning is *shown*, which is a separate axis.
-  thinkBtn.addEventListener('click', (e) => {
-    if (e.altKey) {
-      state.showReasoning = !state.showReasoning;
-      persist();
-      applyEffort();
-      return;
-    }
-    const levels = levelsForModel(currentReasoning());
-    if (levels.length === 0) {
-      return;
-    }
-    const i = levels.indexOf(currentEffort());
-    setEffort(levels[(i + 1) % levels.length]);
+  // "Show reasoning" toggle — the old alt-click axis, now a visible menu row.
+  document.getElementById('toggle-reasoning')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.showReasoning = !state.showReasoning;
+    persist();
+    applyEffort();
   });
   applyEffort();
 
-  // Active-file context toggle
-  ctxFileBtn.addEventListener('click', () => {
+  // Add-context menu: attach image + active-file toggle (+ selection info row).
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu(addMenu, addBtn, 260);
+  });
+  // ? — the same screen /help prints, one click away for people who would
+  // never think to type a slash.
+  document.getElementById('btn-help')!.addEventListener('click', () => {
+    helpCommand();
+  });
+  document.getElementById('menu-attach')!.addEventListener('click', () => {
+    addMenu.classList.add('hidden');
+    fileInput.click();
+  });
+  document.getElementById('menu-ctxfile')!.addEventListener('click', (e) => {
+    e.stopPropagation();
     state.includeActiveFile = !state.includeActiveFile;
     persist();
     renderActiveFile();
     renderMeter();
   });
 
-  // Image attach / paste / drop
-  document.getElementById('btn-attach')!.addEventListener('click', () => fileInput.click());
+  // Behavior menu (permissions · agent · thinking).
+  behaviorBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu(behaviorMenu, behaviorBtn, 300);
+  });
+
+  // Image paste / drop
   fileInput.addEventListener('change', () => {
     if (fileInput.files) {
       for (const f of Array.from(fileInput.files)) {
@@ -695,9 +695,10 @@ function build(): void {
     e.stopPropagation();
     post({ type: 'refreshModels' });
   });
-  serverBtn.addEventListener('click', (e) => {
+  // "Add provider…" expands the inline catalog form inside the combined menu.
+  document.getElementById('provider-add-toggle')!.addEventListener('click', (e) => {
     e.stopPropagation();
-    toggleServerMenu();
+    document.getElementById('provider-add-form')!.classList.toggle('hidden');
   });
   // Local-server form (modal).
   document.getElementById('local-save')!.addEventListener('click', (e) => {
@@ -772,15 +773,15 @@ function build(): void {
     if (!modelMenu.classList.contains('hidden') && !modelMenu.contains(t) && !modelBtn.contains(t)) {
       closeModelMenu();
     }
-    if (!serverMenu.classList.contains('hidden') && !serverMenu.contains(t) && !serverBtn.contains(t)) {
-      closeServerMenu();
-    }
     if (
-      !overflowMenuEl.classList.contains('hidden') &&
-      !overflowMenuEl.contains(t) &&
-      !overflowBtn.contains(t)
+      !behaviorMenu.classList.contains('hidden') &&
+      !behaviorMenu.contains(t) &&
+      !behaviorBtn.contains(t)
     ) {
-      closeOverflowMenu();
+      closeBehaviorMenu();
+    }
+    if (!addMenu.classList.contains('hidden') && !addMenu.contains(t) && !addBtn.contains(t)) {
+      addMenu.classList.add('hidden');
     }
   });
   document.addEventListener('keydown', (e) => {
@@ -804,29 +805,88 @@ function build(): void {
         }
       }
       closeModelMenu();
-      closeServerMenu();
-      closeOverflowMenu();
+      closeBehaviorMenu();
+      addMenu.classList.add('hidden');
     }
   });
-  agentSelect.addEventListener('change', () => {
-    state.agent = agentSelect.value;
-    post({ type: 'selectAgent', agent: state.agent });
-    renderMeter();
-  });
-  permSelect.addEventListener('change', () => {
-    const mode = permSelect.value as PermissionMode;
-    state.permissionMode = mode;
-    // The host persists the setting and acks with 'permissionMode' (the chip
-    // renders on the ack, so settings.json edits get the same feedback).
-    post({ type: 'setPermissionMode', mode });
-  });
+  renderAgents();
+  renderPermissionMode();
 }
 
-/** Reflect the host-owned permission mode in the picker (no chip). */
+/**
+ * Anchor a popup menu above its button, opening upward (shared by the add and
+ * behavior menus; the model menu keeps anchorMenuAbove). Toggles visibility.
+ */
+function toggleMenu(menu: HTMLElement, btn: HTMLElement, maxWidth: number): void {
+  if (!menu.classList.contains('hidden')) {
+    menu.classList.add('hidden');
+    return;
+  }
+  menu.classList.remove('hidden');
+  const r = btn.getBoundingClientRect();
+  const width = Math.min(maxWidth, window.innerWidth - 16);
+  let left = r.left;
+  if (left + width > window.innerWidth - 8) {
+    left = window.innerWidth - width - 8;
+  }
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.width = width + 'px';
+  menu.style.bottom = window.innerHeight - r.top + 6 + 'px';
+}
+
+function closeBehaviorMenu(): void {
+  behaviorMenu.classList.add('hidden');
+}
+
+/** The three permission modes: menu rows (Claude-Code-style icon + name +
+ * description) and the composer chip's identity. */
+const PERM_MODES: Array<{
+  value: PermissionMode;
+  label: string;
+  chip: string;
+  ico: 'zap' | 'lock' | 'unlock';
+  meta: string;
+}> = [
+  { value: 'default', label: 'Auto', chip: 'Auto', ico: 'zap', meta: 'safe actions run on their own, risky ones ask you' },
+  { value: 'strict', label: 'Manual', chip: 'Manual', ico: 'lock', meta: 'every action asks you first' },
+  { value: 'bypass', label: 'Bypass', chip: 'Bypass', ico: 'unlock', meta: 'nothing asks — everything runs' },
+];
+
+/**
+ * Reflect the host-owned permission mode: check the matching row in the
+ * behavior menu, and put the mode on the composer chip itself — the most
+ * important state rides the chip, and bypass is never invisible.
+ */
 function renderPermissionMode(): void {
   state.permissionMode = state.permissionMode ?? 'default';
-  permSelect.value = state.permissionMode;
-  permSelect.classList.toggle('bypass', state.permissionMode === 'bypass');
+  const mode = state.permissionMode;
+  permMenuList.innerHTML = '';
+  for (const rowDef of PERM_MODES) {
+    const row = document.createElement('div');
+    row.className =
+      'model-row menu-pick perm-row' +
+      (rowDef.value === mode ? ' active' : '') +
+      (rowDef.value === 'bypass' ? ' warnrow' : '');
+    row.dataset.mode = rowDef.value;
+    row.innerHTML = `
+      <span class="perm-ico">${icon[rowDef.ico]}</span>
+      <span class="model-info">
+        <span class="model-name">${rowDef.label}</span>
+        <span class="model-meta${rowDef.value === 'bypass' ? ' warntext' : ''}">${rowDef.meta}</span>
+      </span>
+      ${rowDef.value === mode ? `<span class="menu-check">${icon.check}</span>` : ''}`;
+    row.addEventListener('click', () => {
+      if (rowDef.value !== state.permissionMode) {
+        state.permissionMode = rowDef.value;
+        // The host persists the setting and acks with 'permissionMode' (the chip
+        // renders on the ack, so settings.json edits get the same feedback).
+        post({ type: 'setPermissionMode', mode: rowDef.value });
+        renderPermissionMode();
+      }
+    });
+    permMenuList.appendChild(row);
+  }
+  renderBehaviorLabel();
 }
 
 function permissionModeChip(mode: PermissionMode): string {
@@ -1085,11 +1145,38 @@ function showSkills(skills: UiSkill[]): void {
   forceScrollToBottom();
 }
 
+/**
+ * The /help screen (also the composer's ? button): a formatted panel like the
+ * MCP status one — built-ins, server commands and skills grouped, monospace
+ * command column, long skill descriptions clamped with the full text on hover.
+ */
 function helpCommand(): void {
-  const lines = allCommands()
-    .map((c) => `${c.name} — ${c.hint}${c.server?.source === 'skill' ? ' (skill)' : ''}`)
-    .join('\n');
-  addSysChip(`Slash commands:\n${lines}`);
+  const cmds = allCommands();
+  const groups: Array<{ title: string; items: SlashCommand[] }> = [
+    { title: 'Built-in', items: cmds.filter((c) => !c.server) },
+    { title: 'From OpenCode', items: cmds.filter((c) => c.server && c.server.source !== 'skill') },
+    { title: 'Skills', items: cmds.filter((c) => c.server?.source === 'skill') },
+  ];
+  const el = document.createElement('div');
+  el.className = 'sys-chip help-panel';
+  let html = '<div class="help-head">Slash commands</div>';
+  for (const g of groups) {
+    if (!g.items.length) {
+      continue;
+    }
+    html += `<div class="help-group">${g.title}</div>`;
+    for (const c of g.items) {
+      html += `
+        <div class="help-row">
+          <code>${escapeHtml(c.name)}</code>
+          <span class="help-hint" title="${escapeHtml(c.hint)}">${escapeHtml(c.hint)}</span>
+        </div>`;
+    }
+  }
+  el.innerHTML = html;
+  messagesEl.appendChild(el);
+  toggleWelcome();
+  scrollToBottom();
 }
 
 // Render the MCP server status as an inline panel in the message stream — one
@@ -1343,7 +1430,15 @@ function onSend(): void {
       return;
     }
     if (!text.startsWith('/')) {
-      setStatus('Steering — the agent will pick this up at its next step.');
+      // One-shot ack. It shares the activity strip with the working ticker
+      // now, so clear it after a beat instead of squatting on the line.
+      const notice = 'Steering — the agent will pick this up at its next step.';
+      setStatus(notice);
+      setTimeout(() => {
+        if (activityStatus === notice) {
+          setStatus('');
+        }
+      }, 5000);
     }
   }
   if (!text && !state.pendingImages.length) {
@@ -1399,47 +1494,53 @@ function setEffort(level: EffortLevel): void {
 }
 
 /**
- * Reflect effort + reasoning-display state into the composer. The pill cycles
- * through the levels this model actually offers; the body class controls only
- * whether existing reasoning blocks are visible.
+ * Reflect effort + reasoning-display state into the composer. The behavior
+ * chip shows "agent · level"; the body class controls only whether existing
+ * reasoning blocks are visible. The presets themselves live in the behavior
+ * menu's Thinking section (renderEffortPresets).
  */
 function applyEffort(): void {
+  document.body.classList.toggle('hide-reasoning', !state.showReasoning);
+  const check = document.querySelector('#toggle-reasoning .menu-check') as HTMLElement | null;
+  if (check) {
+    check.classList.toggle('off', !state.showReasoning);
+  }
+  renderBehaviorLabel();
+  renderEffortPresets();
+}
+
+/**
+ * The behavior chip is permission-forward (like Claude Code's mode chip):
+ * mode icon + short mode label, warning-colored on bypass. Agent and thinking
+ * live one click away in the menu; the tooltip carries the full picture.
+ */
+function renderBehaviorLabel(): void {
+  if (!behaviorBtnLabel) {
+    return;
+  }
+  const mode = state.permissionMode ?? 'default';
+  const def = PERM_MODES.find((m) => m.value === mode) ?? PERM_MODES[0];
+  behaviorBtnIco.innerHTML = icon[def.ico];
+  behaviorBtnLabel.textContent = def.chip;
+  behaviorBtn.classList.toggle('bypass', mode === 'bypass');
   const reasoning = currentReasoning();
   const levels = levelsForModel(reasoning);
   const level = currentEffort();
-  document.body.classList.toggle('hide-reasoning', !state.showReasoning);
-  if (levels.length === 0) {
-    // Model declares no reasoning support — nothing to cycle.
-    thinkBtn.classList.add('hidden');
-    layoutComposer(); // the freed width lets other pills come back out of ⋯
-    return;
-  }
-  const wasHidden = thinkBtn.classList.contains('hidden');
-  thinkBtn.classList.remove('hidden');
-  if (wasHidden) {
-    layoutComposer();
-  }
-  thinkBtn.classList.toggle('active', level !== 'off' && level !== 'auto');
-  const label = levelLabel(level, reasoning);
-  const span = thinkBtn.querySelector('span');
-  if (span) {
-    // Always the level's own name. Labelling `auto` as "Thinking" read as a
-    // third on-state next to "On" rather than as "let the model decide".
-    span.textContent = label;
-  }
-  thinkBtn.title =
-    (level === 'auto'
-      ? "Reasoning effort: Auto — the model's own default"
-      : `Reasoning effort: ${label}`) +
-    (reasoning === undefined ? ' (support unknown for this model)' : '') +
-    ' — click to cycle, alt-click to show/hide reasoning';
+  behaviorBtn.title =
+    `Permissions: ${def.label} — ${def.meta}. Agent: ${state.agent || 'build'}.` +
+    (levels.length ? ` Thinking: ${levelLabel(level, reasoning)}.` : '');
 }
 
-/** Effort selector in the model-menu footer, mirroring the context presets. */
+/**
+ * Thinking control in the behavior menu: one row — "Thinking (<level>)" label
+ * + a discrete dot slider (Claude-Code-style). Each dot is a button for one of
+ * the levels this model actually offers; the current dot is enlarged.
+ */
 function renderEffortPresets(): void {
   const el = document.getElementById('effort-presets');
   const foot = document.getElementById('effort-foot');
   const note = document.getElementById('effort-note');
+  const label = document.getElementById('effort-label');
   if (!el || !foot) {
     return;
   }
@@ -1457,17 +1558,22 @@ function renderEffortPresets(): void {
           : '';
   }
   const active = currentEffort();
+  if (label) {
+    label.textContent = `Thinking (${levelLabel(active, reasoning)})`;
+  }
   el.innerHTML = '';
   for (const lvl of levels) {
     const b = document.createElement('button');
-    b.className = 'ctx-preset' + (lvl === active ? ' active' : '');
-    b.textContent = levelLabel(lvl, reasoning);
+    b.className = 'effort-dot' + (lvl === active ? ' active' : '');
+    b.dataset.level = lvl;
+    const name = levelLabel(lvl, reasoning);
+    b.setAttribute('aria-label', name);
     b.title =
       lvl === 'auto'
-        ? "Use the model's own default"
+        ? "Auto — use the model's own default"
         : lvl === 'off'
-          ? 'Suppress reasoning entirely'
-          : `Reasoning effort: ${levelLabel(lvl, reasoning)}`;
+          ? 'Off — suppress reasoning entirely'
+          : name;
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       setEffort(lvl);
@@ -1485,17 +1591,41 @@ function persist(): void {
 }
 
 function renderActiveFile(): void {
+  const row = document.getElementById('menu-ctxfile')!;
+  const selRow = document.getElementById('menu-ctxsel')!;
   if (!state.activeFile) {
-    ctxFileBtn.classList.add('hidden');
-    return;
+    row.classList.add('hidden');
+  } else {
+    const base = state.activeFile.path.split('/').pop() || state.activeFile.path;
+    row.classList.remove('hidden');
+    document.getElementById('menu-ctxfile-name')!.textContent = 'Include open file';
+    document.getElementById('menu-ctxfile-meta')!.textContent = base;
+    const check = row.querySelector('.menu-check') as HTMLElement;
+    check.classList.toggle('off', !state.includeActiveFile);
+    row.title = state.includeActiveFile
+      ? `Including ${state.activeFile.path} as context — click to exclude`
+      : `${state.activeFile.path} excluded — click to include as context`;
   }
-  ctxFileBtn.classList.remove('hidden');
-  ctxFileName.textContent = state.activeFile.path.split('/').pop() || state.activeFile.path;
-  ctxFileBtn.classList.toggle('active', state.includeActiveFile);
-  ctxFileBtn.title = state.includeActiveFile
-    ? `Including ${state.activeFile.path} as context — click to exclude`
-    : `${state.activeFile.path} excluded — click to include as context`;
-  layoutComposer(); // pill visibility changes the row's width needs
+  // The editor selection is attached automatically (host-side); surface that
+  // here so everything being sent is visible in one place.
+  if (state.activeSelection) {
+    selRow.classList.remove('hidden');
+    const sel = state.activeSelection as { path?: string; startLine?: number; endLine?: number };
+    const base = sel.path ? sel.path.split('/').pop() : '';
+    const lines =
+      sel.startLine && sel.endLine ? ` · lines ${sel.startLine}–${sel.endLine}` : '';
+    document.getElementById('menu-ctxsel-meta')!.textContent = `${base}${lines}`;
+    selRow.title = 'The editor selection is attached to your next message automatically.';
+  } else {
+    selRow.classList.add('hidden');
+  }
+  // A subtle indicator on the + button when context beyond the message will be
+  // sent (included file, selection, or pending images).
+  const hasContext =
+    !!(state.activeFile && state.includeActiveFile) ||
+    !!state.activeSelection ||
+    state.pendingImages.length > 0;
+  addBtn.classList.toggle('active', hasContext);
 }
 
 // The pinned goal bar (Codex-style): "🎯 Pursuing goal <objective> • round n/N
@@ -1654,6 +1784,7 @@ function renderThumbs(): void {
   });
   // The attachments row holds image chips today; show it only when non-empty.
   attachmentsEl.classList.toggle('hidden', state.pendingImages.length === 0);
+  renderActiveFile(); // the + button's context dot tracks pending images too
 }
 
 // A full-bleed image preview over the chat output area (like Claude's). Click
@@ -1693,8 +1824,9 @@ function closeLightbox(): void {
 // Model / agent pickers
 // ---------------------------------------------------------------------------
 /**
- * Populate the agent picker from the server roster. Only pickable agents appear
- * (mode primary/all); subagents are delegation-only and would do nothing here.
+ * Populate the Agent chips row of the behavior menu from the server roster.
+ * Only pickable agents appear (mode primary/all); subagents are
+ * delegation-only and would do nothing here.
  */
 function renderAgents(): void {
   const agents = state.agents.length
@@ -1702,34 +1834,57 @@ function renderAgents(): void {
     : // Pre-connect fallback so the control is never empty.
       [{ name: 'build', native: true }, { name: 'plan', native: true }];
   const wanted = resolveAgent(state.agent, agents as AgentInfo[]);
-  const sig = JSON.stringify(agents.map((a) => a.name));
-  if (agentSelect.dataset.sig !== sig) {
-    agentSelect.dataset.sig = sig;
-    agentSelect.innerHTML = '';
-    for (const a of agents) {
-      const opt = document.createElement('option');
-      opt.value = a.name;
-      opt.textContent = agentLabel(a as AgentInfo);
-      const tip = agentTooltip(a as AgentInfo);
-      if (tip) {
-        opt.title = tip;
-      }
-      agentSelect.appendChild(opt);
-    }
-  }
   if (state.agent !== wanted) {
     state.agent = wanted;
     post({ type: 'selectAgent', agent: wanted });
   }
-  agentSelect.value = wanted;
+  agentChips.innerHTML = '';
+  for (const a of agents) {
+    const chip = document.createElement('button');
+    chip.className = 'ctx-preset' + (a.name === wanted ? ' active' : '');
+    chip.dataset.agent = a.name;
+    chip.textContent = agentLabel(a as AgentInfo);
+    const tip = agentTooltip(a as AgentInfo);
+    if (tip) {
+      chip.title = tip;
+    }
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.agent !== a.name) {
+        state.agent = a.name;
+        post({ type: 'selectAgent', agent: a.name });
+        renderAgents();
+        renderMeter(); // agent overhead feeds the token estimate
+      }
+    });
+    agentChips.appendChild(chip);
+  }
+  renderBehaviorLabel();
+}
+
+/**
+ * Three states on the composer chip's dot: dim (nothing chosen), white (chosen
+ * but not ready to serve), green (ready). "Ready" is repo-specific: a local
+ * lifecycle model must actually be loaded, while a cloud model is ready as
+ * soon as its provider is enabled and serving.
+ */
+function renderModelDot(): void {
+  const dot = modelBtn.querySelector('.model-dot') as HTMLElement | null;
+  if (!dot) {
+    return;
+  }
+  const cur = state.models.find((m) => m.id === state.currentModel);
+  const provider = cur ? state.providers.find((p) => p.providerID === cur.providerID) : undefined;
+  const ready = !!cur && (cur.lifecycle ? !!cur.loaded : provider?.enabled && provider.status === 'ready');
+  dot.classList.toggle('loaded', !!ready);
+  dot.classList.toggle('selected', !!cur && !ready);
 }
 
 function renderModels(): void {
   renderAgents();
   const cur = state.models.find((m) => m.id === state.currentModel);
-  const dot = modelBtn.querySelector('.model-dot') as HTMLElement;
   const label = modelBtn.querySelector('.model-btn-label') as HTMLElement;
-  dot.classList.toggle('loaded', !!cur?.loaded);
+  renderModelDot();
   if (cur) {
     const ctx = cur.contextLength ? ` · ${formatTokens(cur.contextLength)}` : '';
     label.textContent = cur.name + ctx;
@@ -1742,7 +1897,6 @@ function renderModels(): void {
   // The banner depends on the SELECTED model's provider, so a selection change
   // can turn it on or off just as a probe result can.
   renderConnection();
-  layoutComposer(); // the model label's width changed — refit the row
 }
 
 function renderModelMenu(): void {
@@ -1753,7 +1907,7 @@ function renderModelMenu(): void {
   if (!state.models.length) {
     modelMenuList.innerHTML = state.hasProviders
       ? `<div class="model-empty">No models available. Check your providers.</div>`
-      : `<div class="model-empty">No providers configured yet — open <b>Providers</b> to add an API key or a local server.</div>`;
+      : `<div class="model-empty">No providers configured yet — use <b>Add provider…</b> above to add an API key or a local server.</div>`;
     return;
   }
   // Models arrive grouped by provider (registry order). A header per provider
@@ -1801,7 +1955,6 @@ function renderModelMenu(): void {
   }
   modelMenuList.scrollTop = scrollTop;
   renderCtxPresets();
-  renderEffortPresets();
 }
 
 /** One model row in the picker. */
@@ -1915,7 +2068,14 @@ function renderCtxPresets(): void {
     return;
   }
   if (note) {
-    note.textContent = '';
+    // Be honest about who grants the window: we ask for this size when the
+    // model loads, but the local server decides what it actually hands back
+    // (some builds load every model at its maximum regardless).
+    const loaded = m?.loaded ? m.contextLength || 0 : 0;
+    note.textContent =
+      loaded && loaded !== state.minContext
+        ? `${m!.name} is loaded at ${formatTokens(loaded)} — the local server has the final say; this size applies on the next load.`
+        : 'Applies on the next load — the local server has the final say on the window it grants.';
   }
   // Presets are filtered to the selected model's real maximum (and always
   // include the exact max), so you can never pick more than the model supports.
@@ -1949,9 +2109,16 @@ function toggleModelMenu(): void {
 
 function openModelMenu(): void {
   if (modelMenu.classList.contains('hidden')) {
-    // Tell the host to fast-refresh the list while the picker is open.
+    // Tell the host to fast-refresh the list while the picker is open, and
+    // pull a fresh provider roster for the Providers section (seeding the
+    // add-provider catalog when it's still empty).
     post({ type: 'modelMenu', open: true });
+    post({ type: 'listProviders' });
+    if (!state.catalog.length) {
+      post({ type: 'searchCatalog', query: '' });
+    }
   }
+  renderServerMenu();
   // Groups start collapsed except the one holding the current model, reseeded
   // on every open. A picker over 300+ OpenRouter models is unusable as a flat
   // list, but opening onto nothing but headers hides the one thing you always
@@ -1977,9 +2144,9 @@ function openModelMenu(): void {
  */
 function anchorMenuAbove(menu: HTMLElement, anchor: HTMLElement): void {
   const r = anchor.getBoundingClientRect();
-  // A control that has been collapsed into the (closed) ⋯ menu has no box at
-  // all. Anchor to the bottom of the window rather than computing from zeros,
-  // which would place the popup a full window-height above the top edge.
+  // A hidden/boxless anchor measures as all zeros. Anchor to the bottom of the
+  // window rather than computing from those, which would place the popup a
+  // full window-height above the top edge.
   const anchorTop = r.height ? r.top : window.innerHeight - 8;
   const width = Math.min(380, window.innerWidth - 16);
   let left = r.height ? r.left : 8;
@@ -2004,24 +2171,28 @@ function closeModelMenu(): void {
     post({ type: 'modelMenu', open: false });
   }
   modelMenu.classList.add('hidden');
+  // Fold the add-provider form away with the menu.
+  document.getElementById('provider-add-form')?.classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------
 // Servers (multi-server + offline handling)
 // ---------------------------------------------------------------------------
 function renderServers(): void {
-  const dot = serverBtn.querySelector('.model-dot') as HTMLElement;
-  const name = document.getElementById('server-name')!;
+  // The aggregate connection state lives on the model chip's dot now: red when
+  // no provider can serve a model, regardless of model-loaded state. The ready
+  // provider names ride on the chip's tooltip (there is no single "active"
+  // provider to name).
+  const dot = modelBtn.querySelector('.model-dot') as HTMLElement;
   const ready = state.providers.filter((p) => p.enabled && p.status === 'ready');
-  dot.classList.toggle('loaded', state.upstreamConnected);
   dot.classList.toggle('err', !state.upstreamConnected);
-  // The pill counts what's live rather than naming one server: there is no
-  // single "active" provider any more.
-  name.textContent = ready.length ? `${ready.length} provider${ready.length > 1 ? 's' : ''}` : 'Providers';
-  serverBtn.title = ready.length
-    ? `Providers: ${ready.map((p) => p.name).join(', ')}`
-    : 'Providers — add an API key or a local server';
-  if (!serverMenu.classList.contains('hidden')) {
+  // A provider going ready/offline changes whether the selected model can
+  // actually serve — repaint the dot's ready state with it.
+  renderModelDot();
+  modelBtn.title = ready.length
+    ? `Model & providers — ${ready.map((p) => p.name).join(', ')}`
+    : 'Model & providers — add an API key or a local server';
+  if (!modelMenu.classList.contains('hidden')) {
     renderServerMenu();
   }
   renderConnection();
@@ -2090,7 +2261,7 @@ function renderServerMenu(): void {
     });
     (row.querySelector('.server-edit') as HTMLButtonElement | null)?.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeServerMenu();
+      closeModelMenu();
       openServerEdit(p);
     });
     (row.querySelector('.eject') as HTMLButtonElement | null)?.addEventListener('click', (e) => {
@@ -2234,7 +2405,7 @@ function saveLocalPrompt(): void {
   const key = (document.getElementById('local-key') as HTMLInputElement).value.trim();
   post({ type: 'addLocalProvider', name, url, apiKey: key || undefined });
   closeLocalPrompt();
-  closeServerMenu();
+  closeModelMenu();
 }
 
 // ---- Key prompt -------------------------------------------------------------
@@ -2272,7 +2443,7 @@ function saveKeyPrompt(): void {
   }
   post({ type: 'addProvider', providerID: keyingProvider.id, name: keyingProvider.name, apiKey: key });
   closeKeyPrompt();
-  closeServerMenu();
+  closeModelMenu();
 }
 
 // ---- Provider edit overlay --------------------------------------------------
@@ -2347,91 +2518,8 @@ function saveServerEdit(): void {
   closeServerEdit();
 }
 
-// ---- Composer overflow (⋯) -------------------------------------------------
-
-/**
- * Fit the composer row: restore every collapsible control to its home spot,
- * then move them (in hide-order) into the ⋯ menu until nothing overflows. The
- * separator is just hidden rather than moved (it'd look odd in a menu). The ⋯
- * button is revealed on the first move so its own width is part of the math.
- */
-function layoutComposer(): void {
-  const row = document.querySelector('.composer-row') as HTMLElement | null;
-  if (!row || !overflowItems.length) {
-    return;
-  }
-  for (const it of overflowItems) {
-    if (it.el.id === 'tool-sep') {
-      it.el.classList.remove('hidden');
-    } else if (it.el.parentElement !== it.home) {
-      it.home.insertBefore(it.el, it.anchor.nextSibling);
-    }
-  }
-  let moved = 0;
-  for (const it of overflowItems) {
-    if (row.scrollWidth <= row.clientWidth) {
-      break;
-    }
-    if (it.el.id === 'tool-sep') {
-      it.el.classList.add('hidden');
-      continue;
-    }
-    overflowMenuEl.appendChild(it.el);
-    if (++moved === 1) {
-      overflowBtn.classList.remove('hidden'); // now its width counts too
-    }
-  }
-  if (moved === 0) {
-    overflowBtn.classList.add('hidden');
-    closeOverflowMenu();
-  }
-}
-
-function toggleOverflowMenu(): void {
-  if (overflowMenuEl.classList.contains('hidden')) {
-    const r = overflowBtn.getBoundingClientRect();
-    const width = Math.min(240, window.innerWidth - 16);
-    let left = r.right - width;
-    if (left < 8) {
-      left = 8;
-    }
-    overflowMenuEl.style.left = left + 'px';
-    overflowMenuEl.style.width = width + 'px';
-    overflowMenuEl.style.bottom = window.innerHeight - r.top + 6 + 'px';
-    overflowMenuEl.classList.remove('hidden');
-  } else {
-    closeOverflowMenu();
-  }
-}
-
-function closeOverflowMenu(): void {
-  overflowMenuEl.classList.add('hidden');
-}
-
 /** Pending catalog-search debounce (typing shouldn't queue a request per key). */
 let catalogDebounce: ReturnType<typeof setTimeout> | undefined;
-
-function toggleServerMenu(): void {
-  if (serverMenu.classList.contains('hidden')) {
-    openServerMenu();
-  } else {
-    closeServerMenu();
-  }
-}
-
-function openServerMenu(): void {
-  post({ type: 'listProviders' });
-  if (!state.catalog.length) {
-    post({ type: 'searchCatalog', query: '' });
-  }
-  renderServerMenu();
-  serverMenu.classList.remove('hidden');
-  anchorMenuAbove(serverMenu, serverBtn);
-}
-
-function closeServerMenu(): void {
-  serverMenu.classList.add('hidden');
-}
 
 function renderConnection(): void {
   // The selected model's own provider being down is a banner-worthy problem
@@ -2482,7 +2570,8 @@ function renderConnection(): void {
   connBanner.querySelector('#conn-retry')!.addEventListener('click', () => post({ type: 'retryConnect' }));
   connBanner.querySelector('#conn-servers')!.addEventListener('click', (e) => {
     e.stopPropagation();
-    openServerMenu();
+    // Providers live in the combined model menu now.
+    openModelMenu();
   });
 }
 
@@ -2528,32 +2617,44 @@ function renderMeter(): void {
   if (!ctxMeterEl) {
     return;
   }
-  ctxMeterEl.style.display = state.serverReady ? 'flex' : 'none';
+  // Ambient 2px edge on the composer box: quiet below 70%, labeled + warning
+  // colored above. The full detail lives in the tooltip and the hover label.
+  ctxMeterEl.style.display = state.serverReady ? 'block' : 'none';
+  const box = document.querySelector('.composer-box');
   const win = currentWindow();
   const estimated = state.realTokens <= 0;
   const used = estimated ? estimateUsed() : state.realTokens;
   const pct = win > 0 ? Math.min(100, (used / win) * 100) : 0;
   ctxFillEl.style.width = pct.toFixed(1) + '%';
-  ctxMeterEl.classList.toggle('warn', pct >= 70 && pct < 90);
-  ctxMeterEl.classList.toggle('crit', pct >= 90);
+  const warn = pct >= 70 && pct < 90;
+  const crit = pct >= 90;
+  ctxMeterEl.classList.toggle('warn', warn);
+  ctxMeterEl.classList.toggle('crit', crit);
+  if (box) {
+    box.classList.toggle('ctx-announce', warn || crit);
+    (box as HTMLElement).classList.toggle('ctx-warn', warn);
+    (box as HTMLElement).classList.toggle('ctx-crit', crit);
+  }
   const winLabel = win ? formatTokens(win) : '—';
   let label: string;
   if (state.pendingCompaction) {
     // The reduced size only becomes known on the next real turn (the summarizer
     // turn reports no usable usage), so don't show a number we can't measure.
-    label = `compacted · updates on next message / ${winLabel} context`;
+    label = `compacted · updates on next message / ${winLabel}`;
   } else {
-    label = `${estimated ? '~' : ''}${formatTokens(used)} / ${winLabel} context · ${Math.round(pct)}%`;
+    label = `${estimated ? '~' : ''}${formatTokens(used)} / ${winLabel} · ${Math.round(pct)}%`;
     if (state.compacted) {
       label += ' · compacted';
     }
   }
   ctxLabelEl.textContent = label;
-  ctxMeterEl.title = state.pendingCompaction
+  const tip = state.pendingCompaction
     ? 'Conversation was compacted. The exact reduced size shows after your next message.'
     : estimated
       ? 'Estimated context usage (includes the agent system prompt + tools). LM Studio does not report exact token usage to OpenCode.'
       : 'Context window usage';
+  ctxMeterEl.title = tip;
+  ctxLabelEl.title = tip;
 }
 
 // ---------------------------------------------------------------------------
@@ -2579,6 +2680,8 @@ function clearConversation(): void {
   state.realTokens = 0;
   state.compacted = false;
   lastErrorText = '';
+  lastMsgStamp = 0; // fresh conversation — no gap to measure against
+  firstSeen.clear();
   autoScrollEnabled = true; // fresh conversation starts pinned to the bottom
   toggleWelcome();
 }
@@ -2588,9 +2691,70 @@ function toggleWelcome(): void {
   welcomeEl.style.display = hasContent ? 'none' : 'flex';
 }
 
+// ---------------------------------------------------------------------------
+// Turn timestamps — every finished turn is stamped, long pauses get a divider.
+// ---------------------------------------------------------------------------
+let lastMsgStamp = 0; // epoch ms of the most recent message, for gap dividers
+/** True while replaying a stored session: parts render in their finished state
+ * (reasoning collapsed and labelled) rather than their streaming state. */
+let renderingHistory = false;
+/** Set by renderConversation so loaded history stamps with real times. */
+let msgTimeHint = 0;
+const GAP_DIVIDER_MS = 15 * 60 * 1000;
+
+function fmtStamp(ms: number): string {
+  const age = Date.now() - ms;
+  if (age < 60_000) {
+    return 'just now';
+  }
+  if (age < 3_600_000) {
+    return `${Math.floor(age / 60_000)}m ago`;
+  }
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString()
+    ? time
+    : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+}
+
+function stampSpan(ms: number): string {
+  return `<span class="gen-time" data-ts="${ms}" title="${new Date(ms).toLocaleString()}">${fmtStamp(ms)}</span>`;
+}
+
+/** Keep relative stamps honest without re-rendering anything else. */
+setInterval(() => {
+  document.querySelectorAll('.gen-time[data-ts]').forEach((n) => {
+    n.textContent = fmtStamp(Number((n as HTMLElement).dataset.ts));
+  });
+}, 30_000);
+
+/** Stable timestamp for parts whose state carries no clock of its own. */
+const firstSeen = new Map<string, number>();
+function firstSeenTime(partId: string): number {
+  let t = firstSeen.get(partId);
+  if (!t) {
+    t = Date.now();
+    firstSeen.set(partId, t);
+  }
+  return t;
+}
+
+function maybeInsertTimeDivider(ms: number): void {
+  if (lastMsgStamp > 0 && ms - lastMsgStamp > GAP_DIVIDER_MS) {
+    const div = document.createElement('div');
+    div.className = 'time-divider';
+    div.textContent = new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    messagesEl.appendChild(div);
+  }
+  lastMsgStamp = ms;
+}
+
 function ensureMessageEl(messageID: string, role: string): { partsEl: HTMLElement } {
   let entry = messageEls.get(messageID);
   if (!entry) {
+    if (role === 'user') {
+      maybeInsertTimeDivider(msgTimeHint || Date.now());
+    }
     const el = document.createElement('div');
     el.className = `msg ${role === 'user' ? 'user' : 'assistant'}`;
     const partsEl = document.createElement('div');
@@ -2638,10 +2802,14 @@ function renderTextLike(ps: { el: HTMLElement; buffer: string; type: string }): 
     if (!ps.el.querySelector('.reasoning-body')) {
       // Streams open so you can watch it think, then collapses at turn end
       // (see collapseReasoning) — on a reasoning-heavy turn the thinking can be
-      // ~90% of the output and would otherwise bury the actual answer.
+      // ~90% of the output and would otherwise bury the actual answer. A block
+      // restored from history was never watched, so it opens collapsed.
+      const openAttr = renderingHistory ? '' : ' open';
       ps.el.innerHTML =
-        '<details class="reasoning" open><summary><span class="chev"></span><span class="reasoning-label">Thinking…</span></summary><div class="reasoning-body"></div></details>';
-      ps.el.dataset.startedAt = String(Date.now());
+        `<details class="reasoning"${openAttr}><summary><span class="chev"></span><span class="reasoning-label">Thinking…</span></summary><div class="reasoning-body"></div></details>`;
+      if (!ps.el.dataset.startedAt) {
+        ps.el.dataset.startedAt = String(Date.now());
+      }
       // A block the user opened or closed by hand is theirs — auto-collapse must
       // not override it. Listen for the click rather than `toggle`: `toggle`
       // also fires when the element is inserted already-open, which would mark
@@ -2651,9 +2819,23 @@ function renderTextLike(ps: { el: HTMLElement; buffer: string; type: string }): 
         ps.el.dataset.userToggled = '1';
       });
     }
-    ps.el.dataset.endedAt = String(Date.now());
+    if (!renderingHistory) {
+      ps.el.dataset.endedAt = String(Date.now());
+    }
     ps.el.dataset.chars = String(ps.buffer.length);
     (ps.el.querySelector('.reasoning-body') as HTMLElement).innerHTML = mdToHtml(ps.buffer);
+    if (renderingHistory) {
+      // No live rate data for history — label from the part's own clock.
+      const label = ps.el.querySelector('.reasoning-label') as HTMLElement | null;
+      const started = Number(ps.el.dataset.startedAt ?? 0);
+      const ended = Number(ps.el.dataset.endedAt ?? 0);
+      if (label) {
+        label.textContent =
+          started && ended >= started
+            ? formatThinkingLabel(ended - started, Math.round(ps.buffer.length / 4), false)
+            : 'Thinking';
+      }
+    }
   } else {
     // Fallback: a model that printed the AskUserQuestion JSON as text instead
     // of calling the `question` tool. Once the blob parses, render the picker
@@ -2757,6 +2939,15 @@ function upsertPart(part: Part): void {
     case 'text':
     case 'reasoning': {
       ps.buffer = (part as any).text ?? ps.buffer;
+      // Prefer the part's own clock when it has one — a reloaded block must
+      // report how long the model actually thought, not how long ago we drew it.
+      const t = (part as any).time;
+      if (t?.start) {
+        ps.el.dataset.startedAt = String(t.start);
+      }
+      if (t?.end) {
+        ps.el.dataset.endedAt = String(t.end);
+      }
       renderTextLike(ps);
       break;
     }
@@ -2846,24 +3037,42 @@ function renderTool(el: HTMLElement, part: { tool: string; state: any }, partId:
   const collapsed = toolCollapsed.get(partId) ?? true;
   el.dataset.status = status;
 
+  // The caret alone carries the affordance: no payload → no caret, no click.
+  const output = status === 'error' ? st.error : st.output;
+  const diff = buildEditDiff(part.tool, st);
+  const expandable = !!(diff || output || filePath || (!filePath && Object.keys(input).length));
+  // Edits keep their +N −M — it is the one hint that says something the row
+  // otherwise can't. Everything else drops the payload chatter.
+  const diffChip = diff
+    ? `<span class="tool-hint diffchip"><span class="add">+${diff.added}</span> <span class="del">−${diff.removed}</span></span>`
+    : '';
+  // Right edge: when this call happened. Prefer the tool's own clock, fall
+  // back to first-seen so a part missing timings still dates itself and
+  // doesn't drift on re-render.
+  const partTime = st.time?.end ?? st.time?.start ?? firstSeenTime(partId);
+  const timeCell = status === 'running' || status === 'pending'
+    ? '<span class="tool-time running"></span>'
+    : `<span class="tool-time">${stampSpan(partTime)}</span>`;
+
   el.innerHTML = `
-    <div class="tool-card status-${status}${collapsed ? ' collapsed' : ''}">
-      <button class="tool-head" type="button">
-        <span class="tool-chev"></span>
-        <span class="tool-ico">${icon.tool}</span>
-        <span class="tool-name">${escapeHtml(part.tool)}</span>
-        <span class="tool-title">${escapeHtml(title)}</span>
-        <span class="tool-status">${statusIcon}</span>
-      </button>
-      <div class="tool-body"></div>
-    </div>`;
-  const card = el.querySelector('.tool-card') as HTMLElement;
-  const body = el.querySelector('.tool-body') as HTMLElement;
-  (el.querySelector('.tool-head') as HTMLElement).addEventListener('click', () => {
-    const next = !card.classList.contains('collapsed');
-    card.classList.toggle('collapsed', next);
-    toolCollapsed.set(partId, next);
-  });
+    <button class="tool-line status-${status}${collapsed ? ' collapsed' : ''}${expandable ? '' : ' inert'}" type="button">
+      <span class="tool-chev">${expandable ? icon.caret : ''}</span>
+      <span class="tool-name">${escapeHtml(part.tool)}</span>
+      <span class="tool-title">${escapeHtml(title)}</span>
+      ${diffChip}
+      <span class="tool-status">${statusIcon}</span>
+      ${timeCell}
+    </button>
+    <div class="tool-detail"></div>`;
+  const line = el.querySelector('.tool-line') as HTMLElement;
+  const body = el.querySelector('.tool-detail') as HTMLElement;
+  if (expandable) {
+    line.addEventListener('click', () => {
+      const next = !line.classList.contains('collapsed');
+      line.classList.toggle('collapsed', next);
+      toolCollapsed.set(partId, next);
+    });
+  }
 
   if (filePath) {
     const fileRow = document.createElement('button');
@@ -2872,18 +3081,92 @@ function renderTool(el: HTMLElement, part: { tool: string; state: any }, partId:
     fileRow.addEventListener('click', () => post({ type: 'openFile', path: String(filePath) }));
     body.appendChild(fileRow);
   }
-  const output = status === 'error' ? st.error : st.output;
+  if (diff) {
+    body.appendChild(diff.el);
+  }
   if (output) {
     const pre = document.createElement('pre');
     pre.className = 'tool-output';
     pre.textContent = String(output).slice(0, 8000);
     body.appendChild(pre);
-  } else if (!filePath && Object.keys(input).length) {
+  } else if (!diff && !filePath && Object.keys(input).length) {
     const pre = document.createElement('pre');
     pre.className = 'tool-output dim';
     pre.textContent = JSON.stringify(input, null, 2).slice(0, 1500);
     body.appendChild(pre);
   }
+}
+
+/**
+ * Build the collapsed-by-default diff for an edit/write tool call. Prefers the
+ * unified diff OpenCode attaches to the part metadata; falls back to a plain
+ * removed/added rendering from the tool input. Returns null when the part
+ * carries nothing diffable.
+ */
+function buildEditDiff(
+  tool: string,
+  st: any,
+): { el: HTMLElement; added: number; removed: number } | null {
+  if (tool !== 'edit' && tool !== 'write') {
+    return null;
+  }
+  const input = st.input ?? {};
+  const metaDiff: string | undefined = st.metadata?.diff;
+  const MAX_LINES = 400;
+  const el = document.createElement('pre');
+  el.className = 'tool-diff';
+  let added = 0;
+  let removed = 0;
+  const append = (text: string, cls: string) => {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    el.appendChild(span);
+  };
+  if (metaDiff) {
+    const lines = String(metaDiff).split('\n');
+    for (const [i, lineText] of lines.entries()) {
+      if (i >= MAX_LINES) {
+        append(`… ${lines.length - MAX_LINES} more lines`, 'dl-ctx dim');
+        break;
+      }
+      // File headers (---/+++) are noise here — the row already names the file.
+      if (lineText.startsWith('+++') || lineText.startsWith('---')) {
+        continue;
+      }
+      if (lineText.startsWith('+')) {
+        added++;
+        append(lineText + '\n', 'dl-add');
+      } else if (lineText.startsWith('-')) {
+        removed++;
+        append(lineText + '\n', 'dl-del');
+      } else if (lineText.startsWith('@@')) {
+        append(lineText + '\n', 'dl-hunk');
+      } else {
+        append(lineText + '\n', 'dl-ctx');
+      }
+    }
+    return added || removed ? { el, added, removed } : null;
+  }
+  const oldStr = typeof input.oldString === 'string' ? input.oldString : '';
+  const newStr =
+    typeof input.newString === 'string'
+      ? input.newString
+      : tool === 'write' && typeof input.content === 'string'
+        ? input.content
+        : '';
+  if (!oldStr && !newStr) {
+    return null;
+  }
+  for (const lineText of oldStr ? oldStr.split('\n').slice(0, MAX_LINES / 2) : []) {
+    removed++;
+    append('- ' + lineText + '\n', 'dl-del');
+  }
+  for (const lineText of newStr ? newStr.split('\n').slice(0, MAX_LINES / 2) : []) {
+    added++;
+    append('+ ' + lineText + '\n', 'dl-add');
+  }
+  return { el, added, removed };
 }
 
 // ---------------------------------------------------------------------------
@@ -3213,15 +3496,36 @@ function resolveQuestion(id: string): void {
 // ---------------------------------------------------------------------------
 // Typing indicator / errors / status
 // ---------------------------------------------------------------------------
+/**
+ * One activity strip instead of a #status + #working stack. While a turn runs
+ * it shows the working label + elapsed/tok-s ticker; a transient notice
+ * (steering ack, goal progress, connection warning) takes the line over until
+ * cleared, then the working content returns. Empty and idle → collapsed.
+ */
+function renderActivity(): void {
+  const hasStatus = !!activityStatus;
+  const showing = hasStatus || workingActive;
+  activityEl.classList.toggle('show', showing);
+  activityEl.classList.toggle('warn', hasStatus && activityKind === 'warn');
+  activityEl.classList.toggle('error', hasStatus && activityKind === 'error');
+  activitySpinner.classList.toggle('hidden', !workingActive || hasStatus);
+  activityLabelEl.textContent = hasStatus ? activityStatus : workingActive ? workingLabel : '';
+  if (hasStatus || !workingActive) {
+    activityExtraEl.textContent = '';
+  }
+}
+
 function showWorking(label = 'Working…'): void {
-  workingLabelEl.textContent = label;
-  workingEl.classList.remove('hidden');
+  workingActive = true;
+  workingLabel = label;
   workingStart = Date.now();
-  workingElapsedEl.textContent = '';
   if (workingTimer) {
     clearInterval(workingTimer);
   }
   workingTimer = setInterval(() => {
+    if (activityStatus) {
+      return; // a notice owns the line right now
+    }
     const s = Math.floor((Date.now() - workingStart) / 1000);
     const rate = currentGenRate();
     const parts = [];
@@ -3231,20 +3535,23 @@ function showWorking(label = 'Working…'): void {
     if (rate && rate.tps >= 0.5) {
       parts.push(`${rate.exact ? '' : '~'}${Math.round(rate.tps)} tok/s`);
     }
-    workingElapsedEl.textContent = parts.join(' · ');
+    activityExtraEl.textContent = parts.join(' · ');
   }, 1000);
+  renderActivity();
 }
 function setWorkingLabel(label: string): void {
-  if (!workingEl.classList.contains('hidden')) {
-    workingLabelEl.textContent = label;
+  if (workingActive) {
+    workingLabel = label;
+    renderActivity();
   }
 }
 function hideWorking(): void {
-  workingEl.classList.add('hidden');
+  workingActive = false;
   if (workingTimer) {
     clearInterval(workingTimer);
     workingTimer = undefined;
   }
+  renderActivity();
 }
 
 // Append a small estimated generation-speed stat under the just-finished
@@ -3263,9 +3570,16 @@ function collapseReasoning(): void {
   if (!last) {
     return;
   }
-  const blocks = Array.from(last.querySelectorAll('.part-reasoning')) as HTMLElement[];
+  // An agentic turn spans several assistant messages; collapsing only the last
+  // one left every earlier block open. Sweep the whole conversation — blocks
+  // already collapsed or opened by hand are skipped below.
+  const blocks = Array.from(messagesEl.querySelectorAll('.part-reasoning')) as HTMLElement[];
   const exactReasoning = turnRate.tokens?.reasoning ?? 0;
-  const useExact = blocks.length === 1 && exactReasoning > 0;
+  // Exact counts belong to the finished turn only; with several blocks the
+  // message total can't be attributed to any one of them.
+  const lastBlocks = Array.from(last.querySelectorAll('.part-reasoning'));
+  const useExactFor = (wrap: HTMLElement) =>
+    lastBlocks.length === 1 && lastBlocks[0] === wrap && exactReasoning > 0;
   for (const wrap of blocks) {
     const details = wrap.querySelector('details.reasoning') as HTMLDetailsElement | null;
     const label = wrap.querySelector('.reasoning-label') as HTMLElement | null;
@@ -3275,6 +3589,7 @@ function collapseReasoning(): void {
     const started = Number(wrap.dataset.startedAt ?? 0);
     const ended = Number(wrap.dataset.endedAt ?? 0);
     const chars = Number(wrap.dataset.chars ?? 0);
+    const useExact = useExactFor(wrap);
     const tokens = useExact ? exactReasoning : Math.round(chars / 4);
     if (label && started && ended >= started) {
       label.textContent = formatThinkingLabel(ended - started, tokens, useExact);
@@ -3301,9 +3616,13 @@ function appendGenStat(): void {
   }
   const el = document.createElement('div');
   el.className = 'gen-stat';
-  el.textContent = formatRate(rate);
+  el.innerHTML = `${escapeHtml(formatRate(rate))} · ${stampSpan(Date.now())}`;
+  // The trimmed line keeps four fields; agent, grand total and the thinking
+  // share move here so the detail is one hover away rather than always-on.
   el.title =
     (rate.agent ? `Run by the "${rate.agent}" agent. ` : '') +
+    (rate.grandTotal > 0 ? `Total (prompt + output): ${formatTokens(rate.grandTotal)} tokens. ` : '') +
+    (rate.reasoning > 0 ? `Thinking: ${formatTokens(rate.reasoning)} of the output tokens. ` : '') +
     (rate.exact
       ? 'Exact token usage reported by LM Studio. '
       : 'Token count estimated from the response length (exact usage had not arrived yet). ') +
@@ -3337,8 +3656,9 @@ function showError(message: string): void {
 }
 
 function setStatus(text: string, kind?: 'info' | 'warn' | 'error'): void {
-  statusEl.textContent = text;
-  statusEl.className = `status ${kind ?? ''} ${text ? 'show' : ''}`;
+  activityStatus = text;
+  activityKind = kind ?? '';
+  renderActivity();
 }
 
 function setBusy(busy: boolean): void {
@@ -3460,6 +3780,15 @@ function relativeTime(ms: number): string {
 // ---------------------------------------------------------------------------
 function renderConversation(messages: MessageWithParts[]): void {
   clearConversation();
+  renderingHistory = true;
+  try {
+    renderConversationInner(messages);
+  } finally {
+    renderingHistory = false;
+  }
+}
+
+function renderConversationInner(messages: MessageWithParts[]): void {
   let lastUsed = 0;
   for (const m of messages) {
     roleByMessage.set(m.info.id, m.info.role);
@@ -3484,9 +3813,28 @@ function renderConversation(messages: MessageWithParts[]): void {
       }
       continue; // summarizer-internal turn — not chat
     }
+    const times = (m.info.time ?? {}) as { created?: number; completed?: number };
+    msgTimeHint = Number(times.created) || 0;
     ensureMessageEl(m.info.id, m.info.role);
+    msgTimeHint = 0;
     for (const part of m.parts) {
       upsertPart(part);
+    }
+    // Loaded turns have no live rate data, but they do have completion times —
+    // stamp them so history reads on a timeline. Tool rows carry their own
+    // times, so only a turn WITHOUT them needs a message-level stamp; adding
+    // one anyway printed the same time twice at the end of the turn.
+    const completed = Number(times.completed) || 0;
+    const hasToolRow = m.parts.some((part) => part.type === 'tool');
+    if (m.info.role === 'assistant' && completed > 0 && !hasToolRow) {
+      const entry = messageEls.get(m.info.id);
+      if (entry && !entry.el.querySelector('.gen-stat')) {
+        const stamp = document.createElement('div');
+        stamp.className = 'gen-stat';
+        stamp.innerHTML = stampSpan(completed);
+        entry.el.appendChild(stamp);
+      }
+      lastMsgStamp = Math.max(lastMsgStamp, completed);
     }
     if (m.info.role === 'assistant' && (m.info as any).tokens) {
       const u = tokensUsed((m.info as any).tokens);
@@ -3710,9 +4058,10 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       renderMeter();
       break;
     case 'activeSelection':
-      // The selection is auto-attached silently (no pill); just track it so the
-      // context meter reflects the extra tokens.
+      // The selection is auto-attached (host-side); the add-context menu shows
+      // an info row for it and the context meter reflects the extra tokens.
       state.activeSelection = msg.selection;
+      renderActiveFile();
       renderMeter();
       break;
     case 'status':
