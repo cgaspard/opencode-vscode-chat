@@ -64,7 +64,9 @@ describe('v0.5.2 webview features', function () {
   describe('model picker', () => {
     it('disambiguates models and shows the identity line', async () => {
       await click('#model-btn'); // open the menu
-      await waitFor('.model-row', (n) => n >= 2);
+      // Scoped to the model list: the combined menu (and the behavior menu)
+      // also build .model-row entries for providers / agents / permissions.
+      await waitFor('#model-menu-list .model-row', (n) => n >= 2);
       const idents = await classes('.model-ident'); // present when publisher/format/quant exist
       assert.ok(idents.length >= 1, 'identity lines should render');
       const firstIdent = await text('.model-ident');
@@ -73,18 +75,18 @@ describe('v0.5.2 webview features', function () {
 
     it('Load selects the model as active', async () => {
       // both unloaded; click Load on the first row's action button
-      const ok = await click('.model-row .model-action.load');
+      const ok = await click('#model-menu-list .model-row .model-action.load');
       assert.ok(ok, 'a load button should be clickable');
       // the webview optimistically sets currentModel + shows the spinner ("busy")
-      await waitFor('.model-action.busy', (n) => n >= 1);
-      const busyText = await text('.model-action.busy');
+      await waitFor('#model-menu-list .model-action.busy', (n) => n >= 1);
+      const busyText = await text('#model-menu-list .model-action.busy');
       assert.match(busyText!, /Loading/, 'the clicked action shows a loading spinner');
     });
 
     it('Load button is not a disabled element (so its spinner can animate)', async () => {
-      const disabled = await attr('.model-action.busy', 'disabled');
+      const disabled = await attr('#model-menu-list .model-action.busy', 'disabled');
       assert.strictEqual(disabled, null, 'busy action must not carry the disabled attribute');
-      const ariaBusy = await attr('.model-action.busy', 'aria-busy');
+      const ariaBusy = await attr('#model-menu-list .model-action.busy', 'aria-busy');
       assert.strictEqual(ariaBusy, 'true', 'busy action should mark aria-busy=true');
     });
 
@@ -101,8 +103,8 @@ describe('v0.5.2 webview features', function () {
         assert.ok(await click('#model-btn'));
         await waitFor('#model-menu:not(.hidden)', (n) => n === 1);
       }
-      await waitFor('.model-row .model-action.load', (n) => n >= 1);
-      assert.ok(await click('.model-row .model-action.load'), 'arms close-on-load');
+      await waitFor('#model-menu-list .model-row .model-action.load', (n) => n >= 1);
+      assert.ok(await click('#model-menu-list .model-row .model-action.load'), 'arms close-on-load');
       await post({ type: 'models', models: MODELS.map((m, i) => ({ ...m, loaded: i === 0 })), currentModel: localRef('qwen/qwen3-27b') });
       await waitFor('#model-menu:not(.hidden)', (n) => n === 0);
       assert.strictEqual(await count('#model-menu:not(.hidden)'), 0, 'menu should close after load returns');

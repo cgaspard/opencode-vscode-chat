@@ -65,10 +65,20 @@ describe('providers panel', function () {
     await openPanel();
     await online();
     await postProviders();
-    // The menu list only renders while the menu is open.
-    assert.ok(await click('#server-btn'), 'providers button should be clickable');
-    await waitFor('#server-menu:not(.hidden)', (n) => n === 1);
+    // Providers live in the combined model menu now; the list only renders
+    // while the menu is open.
+    assert.ok(await click('#model-btn'), 'model & providers button should be clickable');
+    await waitFor('#model-menu:not(.hidden)', (n) => n === 1);
     await postProviders(); // re-render rows now that the menu is open
+  });
+
+  after(async () => {
+    // The webview is shared across suites, and later ones assume the model menu
+    // starts closed (their #model-btn click would otherwise toggle it shut).
+    if ((await count('#model-menu:not(.hidden)')) === 1) {
+      await click('#model-btn');
+      await waitFor('#model-menu:not(.hidden)', (n) => n === 0);
+    }
   });
 
   it('lists every configured provider', async () => {
@@ -86,23 +96,34 @@ describe('providers panel', function () {
     assert.strictEqual(await count('#server-menu-list .provider-toggle'), 3);
   });
 
-  it('the local-server tab offers a masked key field', async () => {
-    assert.ok(await click('#tab-local'), 'local tab should be clickable');
-    await waitFor('#add-local:not(.hidden)', (n) => n === 1);
-    assert.strictEqual(await count('#server-add-key'), 1, 'key input should exist');
-    assert.strictEqual(await attr('#server-add-key', 'type'), 'password', 'key input must be masked');
+  it('"Add provider…" expands the catalog form inside the combined menu', async () => {
+    assert.ok(await click('#provider-add-toggle'), 'the add-provider row should be clickable');
+    await waitFor('#provider-add-form:not(.hidden)', (n) => n === 1);
+    assert.strictEqual(await count('#catalog-search'), 1, 'the catalog search input should exist');
   });
 
-  it('the catalog tab lists providers and marks the ones already added', async () => {
-    assert.ok(await click('#tab-cloud'));
-    await waitFor('#add-cloud:not(.hidden)', (n) => n === 1);
-    await post({ type: 'catalog', query: '', providers: CATALOG });
-    await waitFor('#catalog-list .model-row', (n) => n === 2);
+  it('the catalog lists providers and marks the ones already added', async () => {
+    await post({ type: 'catalog', query: '', providers: CATALOG, localServers: [], localMatches: [] });
+    // Rows: the always-present "Custom server" local option + the two cloud
+    // providers from the injected catalog page.
+    await waitFor('#catalog-list .model-row', (n) => n === 3);
     assert.strictEqual(await count('#catalog-list .model-row.dimmed'), 1, 'the configured one is dimmed');
   });
 
+  it('the local-server form offers a masked key field', async () => {
+    // "Custom server" is always the local group's last (here: only) row; its
+    // Set up button opens the local overlay with the optional auth-proxy key.
+    assert.ok(await click('#catalog-list .model-row:nth-child(2) .model-action'), 'Set up should be clickable');
+    await waitFor('#local-overlay:not(.hidden)', (n) => n === 1);
+    assert.strictEqual(await count('#local-key'), 1, 'key input should exist');
+    assert.strictEqual(await attr('#local-key', 'type'), 'password', 'key input must be masked');
+    assert.ok(await click('#local-cancel'));
+    await waitFor('#local-overlay:not(.hidden)', (n) => n === 0);
+  });
+
   it('choosing a catalog provider opens a masked key prompt', async () => {
-    assert.ok(await click('#catalog-list .model-row:nth-child(1) .model-action'));
+    // First cloud row (OpenAI) sits right after the cloud section head.
+    assert.ok(await click('#catalog-list .model-row:nth-child(4) .model-action'));
     await waitFor('#key-overlay:not(.hidden)', (n) => n === 1);
     assert.strictEqual(await attr('#key-input', 'type'), 'password', 'the key must be masked');
     assert.strictEqual(await attr('#key-input', 'value'), '', 'the field starts empty');

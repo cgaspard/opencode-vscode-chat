@@ -65,10 +65,12 @@ describe('generation stat + reasoning collapse', function () {
     await ev({ type: 'session.idle', properties: {} });
     await waitFor('.gen-stat', (n) => n === 1);
     const stat = (await text('.gen-stat'))!;
-    // Exact numbers, no "~" prefix, and the thinking share is broken out.
-    assert.match(stat, /876 out \(776 thinking\)/, `unexpected stat: ${stat}`);
+    // Exact numbers, no "~" prefix; the thinking share moved to the tooltip.
+    assert.match(stat, /876 out\b/, `unexpected stat: ${stat}`);
     assert.ok(!stat.startsWith('~'), `exact usage should not be marked approximate: ${stat}`);
     assert.match(stat, /tok\/s/);
+    const title = (await attr('.gen-stat', 'title')) ?? '';
+    assert.match(title, /Thinking: 776/, `the thinking share should be in the tooltip: ${title}`);
   });
 
   it('the stat reports the whole cost of the turn, not just what was generated', async () => {
@@ -76,12 +78,13 @@ describe('generation stat + reasoning collapse', function () {
     // conversation — so output alone hides what the turn actually cost.
     const stat = (await text('.gen-stat'))!;
     assert.match(stat, /20 in/, `input tokens should be shown: ${stat}`);
-    assert.match(stat, /896 total/, `input+output total should be shown: ${stat}`);
+    const title = (await attr('.gen-stat', 'title')) ?? '';
+    assert.match(title, /896 tokens/, `input+output total should be in the tooltip: ${title}`);
   });
 
-  it('names the agent that ran the turn', async () => {
+  it('names the agent that ran the turn (in the tooltip)', async () => {
     // Confirms the picker selection actually took effect for this turn.
-    assert.match((await text('.gen-stat'))!, /^build ·/);
+    assert.match((await attr('.gen-stat', 'title')) ?? '', /Run by the "build" agent/);
   });
 
   it('the reasoning block auto-collapses when the turn ends', async () => {
