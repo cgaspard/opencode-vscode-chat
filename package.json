@@ -2,7 +2,7 @@
   "name": "opencode-vscode-chat",
   "displayName": "OpenCode Agent Panel",
   "description": "Bring your own models: an agentic coding panel powered by the open-source OpenCode agent. Add API keys for Anthropic, OpenAI, Google, OpenRouter and 170+ more, and/or point it at a local LM Studio, Ollama or vLLM server.",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "publisher": "cgaspard",
   "license": "MIT",
   "icon": "media/icon.png",
