@@ -3,6 +3,39 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.10.3
+
+_Released 2026-08-29_
+
+### Highlights
+- Closing a file now actually removes it from the chat's context — no more phantom "Include open file" row, and no more stale selection riding along on your next message.
+
+### Fixed
+- The panel kept the last open file and its selection when the active editor went away, so that clicking into the composer wouldn't wipe your context. But closing a tab fires neither an editor nor a selection change, so a closed file stayed pinned forever — it showed in the + menu and was silently attached to every later prompt. Context is now re-checked against the tabs that are actually open.
+- A file closed while the panel was hidden is dropped when the panel comes back, and the check runs once more at send time, so a closed file can never be attached to a prompt.
+
+## v0.10.2
+
+_Released 2026-08-20_
+
+### Highlights
+- Long tool commands now truncate with an ellipsis; expand the row to see the full command in a box that scrolls on its own.
+
+### Fixed
+- Tool rows are buttons, and buttons size to their content instead of their container — so a long bash command still stretched the row past the panel edge and brought the horizontal scrollbar back. Rows now pin to the panel width and the title ellipsizes like it was always meant to.
+- Expanding a bash row now shows the complete command above its output, in a scrollable box, so nothing is lost to the ellipsis. Hovering a truncated title also shows the full text as a tooltip.
+
+## v0.10.1
+
+_Released 2026-08-16_
+
+### Highlights
+- Wide content no longer drags the whole panel sideways — long lines wrap, and diffs and code scroll inside their own box.
+
+### Fixed
+- One wide diff, code block or long path stretched the entire message column, putting a horizontal scrollbar on the panel and carrying every other message off-screen with it. Message parts can shrink again, so wide content scrolls within itself instead.
+- Long unbroken tokens — file paths, URLs, base64 — now wrap inside tool rows and the slash-command help rather than widening the row.
+
 ## v0.10.0
 
 _Released 2026-08-15_
