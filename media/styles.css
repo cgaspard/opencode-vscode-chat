@@ -2141,7 +2141,16 @@ body.compacting .send-btn {
   background: transparent;
 }
 .toggle-track {
-  display: block;
+  /* Flex + padding rather than a margin on the knob: the track is a block box
+     with no padding or border of its own, so a knob margin-top collapses
+     straight through it and the knob rides flush with the track's top edge —
+     it read as a knob bulging out of the pill. The padding here IS the knob's
+     3px inset at rest, and with border-box it also sets the travel: content
+     width 28 - 6 = 22, knob 10, so translateX(12px) lands the knob 3px from
+     the right end, symmetric with its resting inset. */
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
   width: 28px;
   height: 16px;
   border-radius: 999px;
@@ -2155,9 +2164,9 @@ body.compacting .send-btn {
 }
 .toggle-knob {
   display: block;
+  flex: none;
   width: 10px;
   height: 10px;
-  margin: 3px;
   border-radius: 50%;
   /* Never the widget background: that is the colour of the panel *behind* the
      switch, so the knob rendered as a hole punched in the track rather than a

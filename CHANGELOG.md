@@ -3,6 +3,17 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.11.1
+
+_Released 2026-09-02_
+
+### Highlights
+- The provider on/off switches in the model panel are drawn correctly again — the knob sits centred in its pill instead of riding up and out of the top edge.
+
+### Fixed
+- The switch inset its knob with a 3px margin, but the track around it was a plain block box with no padding or border of its own, so the knob's top margin collapsed straight through the track and was applied outside it. The knob rendered flush with the top of the pill and read as bulging out of it — measured, a 0px gap above and 6px below. The left and right insets were unaffected, because horizontal margins never collapse, which is why only the vertical looked wrong.
+- The track now centres the knob itself and carries the 3px inset as its own padding, so nothing can escape it. That padding also defines the travel — a 28px track less 6px of padding leaves 22px for a 10px knob — so the switch's 12px throw still lands the knob exactly as far from the right end as it rests from the left, and the whole control now sits on the same centre line as the edit and remove buttons beside it.
+
 ## v0.11.0
 
 _Released 2026-09-02_
