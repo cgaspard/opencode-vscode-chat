@@ -3,6 +3,25 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.11.0
+
+_Released 2026-09-02_
+
+### Highlights
+- oMLX is now recognised as its own local runtime, so a model served through it reports its real vision support and context window instead of looking text-only with a guessed window.
+
+### Added
+- oMLX joins LM Studio, Ollama and vLLM as a detected local runtime. Because oMLX and vLLM both default to port 8000, detection reads the `/health` body for oMLX's `engine_pool` block rather than trusting the port, and a server found there is now labelled by what actually answered instead of always being offered as "vLLM".
+- Models served by oMLX are read from `/v1/models/status`, which carries the metadata its OpenAI-compatible `/v1/models` surface omits — `model_type: vlm` for multimodal models, the configured `max_context_window`, and load state. A model set up by hand as a plain OpenAI-compatible endpoint is also offered this richer listing, so it is not penalised for having been typed in rather than probed.
+- Where an oMLX model declares an alias, the alias is what the picker offers — that is the id its chat endpoint accepts, so selecting the on-disk name would have failed the request.
+
+### Changed
+- A local endpoint that reports vision now overrides the capability written into our own generated config. That config records an absent value as an explicit `false`, so without this an oMLX-hosted multimodal model stayed marked text-only and had images stripped before the request.
+- vLLM and oMLX both advertise the served context as `max_model_len` on `/v1/models`, and that is now read. Previously the picker fell back to the `minContextLength` setting and reported a window unrelated to the server's real limit.
+
+### Fixed
+- The bundled OpenCode server moves from 1.18.17 to 1.18.26. Most relevant here - `textVerbosity` is no longer sent to OpenAI-compatible servers that reject it, a turn no longer stops early on a finish reason OpenCode does not recognise, failed subagent calls surface a resumable task id, and more network-error shapes are retried.
+
 ## v0.10.3
 
 _Released 2026-08-29_

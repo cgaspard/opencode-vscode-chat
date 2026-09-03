@@ -257,6 +257,17 @@ export class LocalClient {
         return rich;
       }
     }
+    // 'openai-compatible' is tried too, not just 'omlx': an endpoint the user
+    // added by hand is stored under that flavor (the URL was typed, so nothing
+    // probed it), and oMLX behind it would otherwise report no vision and no
+    // context window. The request is a single localhost call that 404s
+    // immediately on anything else, and listings are cached per key/flavor.
+    if (this.flavor === 'omlx' || this.flavor === 'openai-compatible') {
+      const rich = await this.listOmlxModels();
+      if (rich.length) {
+        return rich;
+      }
+    }
     return this.listOpenAiModels();
   }
 
@@ -350,6 +361,58 @@ export class LocalClient {
   }
 
   /** The OpenAI-compatible listing every local server supports. */
+  /**
+   * oMLX's model catalog, from `/v1/models/status`.
+   *
+   * oMLX's OpenAI surface is deliberately minimal — `/v1/models` carries an id
+   * and `max_model_len` and nothing else, so a model served through it looks
+   * text-only even when it is a VLM. `/v1/models/status` is the same list with
+   * the metadata attached: `model_type` ('vlm' for multimodal), the configured
+   * `max_context_window`, and load state.
+   *
+   * Ids are reconciled deliberately: this endpoint reports the on-disk id
+   * ("Qwen3.8-Flash-Next-oQ4e-mtp") *plus* `model_alias`, while `/v1/models`
+   * and `/v1/chat/completions` speak the alias when one is set. The alias has
+   * to win or the picker would offer an id inference then rejects.
+   */
+  private async listOmlxModels(): Promise<LocalModel[]> {
+    try {
+      const res = await fetch(`${this.baseUrl}/models/status`, {
+        signal: AbortSignal.timeout(8000),
+        headers: this.headers(),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { models?: any[] };
+        return (json.models ?? [])
+          .filter((m) => m && !m.is_helper && !/embed/i.test(m.model_type ?? ''))
+          .map((m): LocalModel => {
+            const id = m.model_alias || m.id;
+            return {
+              id,
+              displayName: prettyName(id),
+              type: m.model_type ?? 'llm',
+              state: m.loaded ? 'loaded' : 'not-loaded',
+              // `model_context_length` is what the checkpoint supports;
+              // `max_context_window` is what this server will actually accept,
+              // so the smaller configured value is the honest ceiling.
+              maxContextLength: m.max_context_window ?? m.model_context_length,
+              loadedContextLength: m.loaded ? m.max_context_window : undefined,
+              vision: m.model_type === 'vlm' || m.engine_type === 'vlm',
+              // `reasoning` is deliberately left unset. oMLX reports only a
+              // per-model `thinking_default` boolean, not the option names a
+              // ReasoningCapability describes — declaring an empty
+              // `allowedOptions` would assert the model offers no levels.
+              // Unset means "unknown", which effort.ts already reads as
+              // supported-with-our-own-variant-table rather than unsupported.
+            };
+          });
+      }
+    } catch (err) {
+      logError('listModels via /v1/models/status failed, falling back to /v1/models', err);
+    }
+    return [];
+  }
+
   private async listOpenAiModels(): Promise<LocalModel[]> {
     try {
       const res = await fetch(`${this.baseUrl}/models`, {
@@ -360,7 +423,18 @@ export class LocalClient {
         const json = (await res.json()) as { data?: any[] };
         return (json.data ?? [])
           .filter((m) => m && typeof m.id === 'string' && !/embed/i.test(m.id))
-          .map((m): LocalModel => ({ id: m.id, displayName: prettyName(m.id), type: 'llm' }));
+          .map(
+            (m): LocalModel => ({
+              id: m.id,
+              displayName: prettyName(m.id),
+              type: m.type ?? 'llm',
+              // vLLM and oMLX both advertise the served context as
+              // `max_model_len` here. Without it the picker falls back to the
+              // `minContextLength` setting and reports a window that has
+              // nothing to do with the server's actual limit.
+              maxContextLength: m.max_model_len ?? m.max_context_length,
+            }),
+          );
       }
     } catch (err) {
       logError('listModels via /v1/models failed', err);
@@ -542,6 +616,9 @@ export async function detectFlavor(baseUrl: string, timeoutMs = 1500): Promise<L
   if (await ping(`${root}/api/tags`)) {
     return 'ollama';
   }
+  if (await isOmlx(root, timeoutMs)) {
+    return 'omlx';
+  }
   if (await ping(`${root}/version`)) {
     return 'vllm';
   }
@@ -549,6 +626,27 @@ export async function detectFlavor(baseUrl: string, timeoutMs = 1500): Promise<L
     return 'openai-compatible';
   }
   return null;
+}
+
+/**
+ * oMLX fingerprint. Checked before vLLM because both default to port 8000 and
+ * `/health` is a name they could plausibly share — a bare 200 there proves
+ * nothing, so this reads the body for oMLX's `engine_pool` block (its loaded/
+ * ceiling accounting, which no other runtime reports). `/health` is one of the
+ * few oMLX routes that answers unauthenticated, so this works before a key is
+ * entered and can't be defeated by the API key it enforces everywhere else.
+ */
+async function isOmlx(root: string, timeoutMs: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${root}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) {
+      return false;
+    }
+    const json = (await res.json()) as { engine_pool?: unknown };
+    return !!json && typeof json === 'object' && json.engine_pool !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function prettyName(id: string): string {

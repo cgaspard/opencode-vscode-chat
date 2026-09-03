@@ -28,10 +28,28 @@ export type ConnectionKind = 'builtin' | 'catalog' | 'local';
 
 /**
  * What a local endpoint turns out to be. Detected by probing, not asked for —
- * it only gates optional extras (LM Studio's load/eject + context enforcement),
- * so guessing 'openai-compatible' is always a safe outcome.
+ * it only gates optional extras (LM Studio's load/eject + context enforcement,
+ * oMLX's model metadata), so guessing 'openai-compatible' is always a safe
+ * outcome: the endpoint still lists and serves, just with less known about it.
  */
-export type LocalFlavor = 'lmstudio' | 'ollama' | 'vllm' | 'openai-compatible';
+export type LocalFlavor = 'lmstudio' | 'ollama' | 'vllm' | 'omlx' | 'openai-compatible';
+
+/**
+ * Product name per flavor, for when the probe disagrees with the nominal label
+ * of the URL it was found at. oMLX and vLLM share port 8000, so a single
+ * LOCAL_PROBE_TARGETS row cannot name both — the detected flavor decides.
+ *
+ * 'openai-compatible' is intentionally absent: it names no product, and it is
+ * also the outcome when a known runtime's fingerprint probe fails but `/models`
+ * still answers. Falling back to the probe row's own name keeps an LM Studio
+ * that failed its greeting labelled "LM Studio" rather than something vaguer.
+ */
+export const LOCAL_FLAVOR_LABELS: Partial<Record<LocalFlavor, string>> = {
+  lmstudio: 'LM Studio',
+  ollama: 'Ollama',
+  vllm: 'vLLM',
+  omlx: 'oMLX',
+};
 
 export interface ProviderConnection {
   /** Stable internal id. For local endpoints this is also the OpenCode provider id. */

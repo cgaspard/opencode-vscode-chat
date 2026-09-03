@@ -26,6 +26,7 @@ import { humanizeError, isConnectionError } from '../core/errors';
 import { aggregateUpstream, type ProbeStatus } from '../core/health';
 import { type PermissionMode, normalizePermissionMode } from '../core/permission';
 import {
+  LOCAL_FLAVOR_LABELS,
   LOCAL_PROBE_TARGETS,
   assembleModels,
   formatModelRef,
@@ -1668,7 +1669,10 @@ export class ChatBridge {
           return null; // already configured — don't offer a duplicate
         }
         const flavor = await detectFlavor(t.url);
-        return flavor ? { name: t.name, url: t.url, flavor } : null;
+        // The probe row's name is only the *expected* product at that port.
+        // oMLX and vLLM both default to 8000, so name what actually answered
+        // rather than offering an oMLX server as "vLLM".
+        return flavor ? { name: LOCAL_FLAVOR_LABELS[flavor] ?? t.name, url: t.url, flavor } : null;
       }),
     );
     this.post({ type: 'detectedLocal', servers: found.filter((f) => !!f) });

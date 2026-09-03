@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
   BUILTIN_ZEN,
+  LOCAL_FLAVOR_LABELS,
   assembleModels,
   catalogEntries,
   formatModelRef,
@@ -359,4 +360,50 @@ test('rows are grouped by registry order, then by name', () => {
     'anthropic',
     'lm-studio',
   ]);
+});
+
+// A local endpoint that reports real metadata (LM Studio's native catalog,
+// oMLX's /v1/models/status) is the only source for vision and the served
+// context window — the OpenAI-compatible /v1/models surface carries neither.
+// These cover the path that made an oMLX-hosted VLM look text-only: the
+// endpoint reported nothing, so `attachment` came out false and the picker
+// showed the minContextLength fallback instead of the server's real limit.
+test('a local model takes vision and context window from what the endpoint reported', () => {
+  const local = new Map<string, LocalModelShape>([
+    [
+      'lm-studio/qwen/qwen3-coder-30b',
+      { id: 'qwen/qwen3-coder-30b', displayName: 'qwen3-coder-30b', maxContextLength: 131_072, vision: true },
+    ],
+  ]);
+  const [model] = assembleModels([REAL[1]], CONNS, local);
+  assert.equal(model.vision, true);
+  assert.equal(model.maxContextLength, 131_072);
+});
+
+// The load-bearing half of the fix. What a local endpoint reports must beat the
+// declared capabilities, because those are *our own* synthesized config: we
+// write `attachment: !!vision`, so an endpoint that reported nothing lands in
+// the config as an explicit `false` (and `input.image: false`) rather than as
+// unknown. Reading the config first would make that false permanent and no
+// amount of endpoint metadata could correct it.
+test('what the endpoint reports overrides a declared attachment:false', () => {
+  assert.equal(REAL[1].models['qwen/qwen3-coder-30b'].capabilities?.attachment, false);
+  const local = new Map<string, LocalModelShape>([
+    [
+      'lm-studio/qwen/qwen3-coder-30b',
+      { id: 'qwen/qwen3-coder-30b', displayName: 'qwen3-coder-30b', vision: true },
+    ],
+  ]);
+  assert.equal(assembleModels([REAL[1]], CONNS, local)[0].vision, true);
+  // Without that override the config's own false stands, which is the bug an
+  // oMLX-hosted VLM hit: multimodal model, image stripped before the request.
+  assert.equal(assembleModels([REAL[1]], CONNS)[0].vision, false);
+});
+
+test('LOCAL_FLAVOR_LABELS names each real runtime and omits the generic flavor', () => {
+  assert.equal(LOCAL_FLAVOR_LABELS.omlx, 'oMLX');
+  assert.equal(LOCAL_FLAVOR_LABELS.vllm, 'vLLM');
+  // Absent on purpose, so a known port whose fingerprint probe failed keeps the
+  // probe row's own product name instead of being relabelled generically.
+  assert.equal(LOCAL_FLAVOR_LABELS['openai-compatible'], undefined);
 });
