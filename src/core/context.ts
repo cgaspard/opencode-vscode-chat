@@ -22,6 +22,71 @@ export function clampContext(requested: number, modelMax?: number): number {
   return Math.max(1, Math.min(req, cap));
 }
 
+/** A positive, finite integer, or undefined. Anything else is "not reported". */
+function positive(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+/**
+ * The context window advertised by one OpenAI-compatible `/v1/models` row.
+ *
+ * Every local runtime spells it differently and none of them agree: vLLM
+ * writes `max_model_len`, oMLX `max_context_length`, and llama.cpp publishes
+ * neither — it nests the window under `meta.n_ctx`. Missing all three the
+ * caller gets undefined, which downstream reads as "unknown" rather than
+ * filling the hole with a setting default and calling it a detected capability.
+ *
+ * `meta.n_ctx_train` is deliberately not consulted: that is the checkpoint's
+ * ceiling, routinely far above the window the server was actually started with.
+ *
+ * `meta.n_ctx` is the window this llama.cpp *process* holds, and `--parallel N`
+ * divides it across N slots — so a caller that has read the per-slot window
+ * from `/props` passes it as `slotContext` and it wins, capped by the process
+ * window so a stale or odd `/props` can never inflate the budget.
+ */
+export function contextFromModelRow(
+  row: Record<string, any> | undefined,
+  slotContext?: number,
+): number | undefined {
+  const direct = positive(row?.max_model_len) ?? positive(row?.max_context_length);
+  if (direct) {
+    return direct;
+  }
+  const processWindow = positive(row?.meta?.n_ctx);
+  if (!processWindow) {
+    return undefined;
+  }
+  const slot = positive(slotContext);
+  return slot ? Math.min(slot, processWindow) : processWindow;
+}
+
+/**
+ * The window to declare to OpenCode as `limit.context` for one local model.
+ *
+ * On a server with a load lifecycle (LM Studio) the window is genuinely ours:
+ * we ask for `requested` when the model loads, capped by what the model
+ * supports. Every other local runtime was started with its window already
+ * fixed — llama.cpp's `--ctx-size`, vLLM's `--max-model-len`, oMLX's
+ * configured window — and when such a server reports that number it *is* the
+ * budget. Clamping it down to `minContextLength` there would make OpenCode
+ * compact against 32K on a 256K window and throw away context the GPU is
+ * already holding. The setting still applies when the server reports nothing,
+ * because then it is the only estimate anyone has.
+ */
+export function declaredContext(
+  requested: number,
+  modelMax: number | undefined,
+  lifecycle: boolean,
+): number {
+  const max = positive(modelMax);
+  if (!lifecycle && max) {
+    return max;
+  }
+  return clampContext(requested, modelMax);
+}
+
 const BASE_PRESETS = [8192, 16384, 32768, 65536, 131072, 262144];
 
 /**
@@ -57,10 +122,12 @@ export interface WindowModel {
   maxContextLength?: number;
   /** Which kind of connection serves it — decides who owns the window. */
   providerKind?: ConnectionKind;
+  /** True when the serving process fixed the window at launch. */
+  windowFixed?: boolean;
 }
 
 /**
- * Whether the context window is ours to choose, or the provider's.
+ * Whether the context window is ours to choose, or already decided for us.
  *
  * Only local endpoints: `minContextLength` reaches a model exclusively through
  * the declaration we build for a local provider (serverManager.localModelsFor,
@@ -68,9 +135,19 @@ export interface WindowModel {
  * lifecycle. A builtin/catalog model runs whatever window its provider
  * publishes — nothing we set is ever sent — so the setting is inert there, and
  * an unknown kind is treated the same way rather than pretending we control it.
+ *
+ * `windowFixed` carves out the local servers that are equally out of our hands:
+ * a llama.cpp/vLLM/oMLX process was started with `--ctx-size` (or its
+ * equivalent) and will not renegotiate, so when it reports that window the
+ * honest answer is the same as for a cloud model — this is the number, and the
+ * setting cannot move it. A local endpoint that reports *nothing* stays
+ * managed: the setting is then the only window anyone has named.
  */
-export function isWindowManaged(model?: { providerKind?: ConnectionKind }): boolean {
-  return model?.providerKind === 'local';
+export function isWindowManaged(model?: {
+  providerKind?: ConnectionKind;
+  windowFixed?: boolean;
+}): boolean {
+  return model?.providerKind === 'local' && !model.windowFixed;
 }
 
 /**
@@ -78,9 +155,10 @@ export function isWindowManaged(model?: { providerKind?: ConnectionKind }): bool
  * loaded, otherwise the window we would load it at — min(configured, model max)
  * — so it tracks the selected model rather than a single hard-coded number.
  *
- * For a provider-managed model the configured minimum is not part of that math:
- * measuring a 195K cloud model against a 32K setting we never send would report
- * the bar as full five times too early.
+ * For a model whose window is not ours the configured minimum is not part of
+ * that math: measuring a 195K cloud model — or a llama.cpp server started at
+ * 256K — against a 32K setting we never send would report the bar as full
+ * eight times too early.
  */
 export function computeWindow(model: WindowModel | undefined, minContext: number): number {
   const min = Number.isFinite(minContext) && minContext > 0 ? minContext : 0;

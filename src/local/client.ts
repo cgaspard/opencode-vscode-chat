@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { restRoot } from '../config';
+import { contextFromModelRow } from '../core/context';
 import type { ReasoningCapability } from '../core/effort';
 import { ProbeStatus } from '../core/health';
 import type { LocalFlavor } from '../core/providers';
@@ -421,25 +422,61 @@ export class LocalClient {
       });
       if (res.ok) {
         const json = (await res.json()) as { data?: any[] };
-        return (json.data ?? [])
-          .filter((m) => m && typeof m.id === 'string' && !/embed/i.test(m.id))
-          .map(
-            (m): LocalModel => ({
-              id: m.id,
-              displayName: prettyName(m.id),
-              type: m.type ?? 'llm',
-              // vLLM and oMLX both advertise the served context as
-              // `max_model_len` here. Without it the picker falls back to the
-              // `minContextLength` setting and reports a window that has
-              // nothing to do with the server's actual limit.
-              maxContextLength: m.max_model_len ?? m.max_context_length,
-            }),
-          );
+        const rows = (json.data ?? []).filter(
+          (m) => m && typeof m.id === 'string' && !/embed/i.test(m.id),
+        );
+        // Only llama.cpp nests its window under `meta.n_ctx`, and only there is
+        // the extra /props round-trip worth making — see slotContext().
+        const slot = rows.some((m) => m.meta?.n_ctx) ? await this.slotContext() : undefined;
+        return rows.map(
+          (m): LocalModel => ({
+            id: m.id,
+            displayName: prettyName(m.id),
+            type: m.type ?? 'llm',
+            // Each runtime names the served context differently — vLLM
+            // `max_model_len`, oMLX `max_context_length`, llama.cpp
+            // `meta.n_ctx`. Reading none of them leaves this undefined and the
+            // picker falls back to the `minContextLength` setting, reporting a
+            // window that has nothing to do with the server's actual limit.
+            maxContextLength: contextFromModelRow(m, slot),
+          }),
+        );
       }
     } catch (err) {
       logError('listModels via /v1/models failed', err);
     }
     return [];
+  }
+
+  /**
+   * llama.cpp's per-request context window, from `/props`.
+   *
+   * `/v1/models` reports `meta.n_ctx` — the window the *process* holds, which
+   * `--parallel N` slices into N independent slots. A server started with
+   * `--ctx-size 262144 --parallel 4` gives any single request 65536, so
+   * declaring `meta.n_ctx` there would overstate the budget 4× and OpenCode
+   * would pack prompts the server cannot accept.
+   *
+   * `/props` carries `default_generation_settings.n_ctx`, which llama.cpp has
+   * already divided per slot — the honest per-request ceiling. Returns
+   * undefined when /props is unavailable (older builds, or `--no-props`),
+   * leaving the caller with the process window it already has.
+   */
+  private async slotContext(): Promise<number | undefined> {
+    try {
+      const res = await fetch(`${this.rest}/props`, {
+        signal: AbortSignal.timeout(4000),
+        headers: this.headers(),
+      });
+      if (!res.ok) {
+        return undefined;
+      }
+      const json = (await res.json()) as { default_generation_settings?: { n_ctx?: number } };
+      const n = json?.default_generation_settings?.n_ctx;
+      return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+    } catch {
+      return undefined; // not a llama.cpp build that serves /props — meta.n_ctx stands
+    }
   }
 
   /** Find a single model's current metadata. */

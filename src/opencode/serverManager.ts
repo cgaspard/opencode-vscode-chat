@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import * as vscode from 'vscode';
 import { ExtensionConfig, getConfig } from '../config';
 import { resolveBinaryPath } from '../core/binary';
-import { clampContext } from '../core/context';
+import { declaredContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
 import { HOST_XDG_ENV, hostXdgForChildren, snapshotHostXdg, withHostXdg } from '../core/hostenv';
 import { augmentedPath } from '../core/mcp';
@@ -414,12 +414,16 @@ export class OpencodeServerManager {
     try {
       const client = this.endpoints.get(conn.id);
       const list = (await client?.listModels()) ?? [];
+      // Only a load lifecycle (LM Studio) makes the window ours to name. A
+      // llama.cpp/vLLM/oMLX process fixed its window at launch, so `ctx` is not
+      // a request there — it would only shrink a window we cannot grow back.
+      const lifecycle = !!client?.supportsLifecycle;
       for (const m of list) {
         // OpenCode drops image attachments unless the model is declared with
         // attachment + image modality. Align the context limit with the window
-        // we ensure-load so OpenCode compacts before the server overflows — but
-        // never declare more context than the model actually supports.
-        const perModel = clampContext(ctx, m.maxContextLength);
+        // the server actually serves so OpenCode compacts before it overflows —
+        // and never declare more context than the model supports.
+        const perModel = declaredContext(ctx, m.maxContextLength, lifecycle);
         models[m.id] = {
           name: m.displayName,
           attachment: !!m.vision,

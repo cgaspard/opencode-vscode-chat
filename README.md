@@ -51,7 +51,7 @@ Type while the agent is working and hit Enter — your instructions get injected
 ## Your models, your keys
 
 - **Add a provider in two clicks** — search the models.dev catalog, paste a key, done. No per-provider setup: the model list, context limits, capabilities and prices all come back from the provider itself.
-- **Local servers too** — LM Studio, Ollama, vLLM, or anything else speaking OpenAI-compatible `/v1`. A one-click scan finds servers already running on the usual ports.
+- **Local servers too** — LM Studio, Ollama, vLLM, oMLX, llama.cpp, or anything else speaking OpenAI-compatible `/v1`. A one-click scan finds LM Studio, Ollama and vLLM on their usual ports; anything else is added by URL. A server that reports its own context window is used at that size.
 - **One picker, every provider** — models grouped by provider, with context window, vision/tool badges, and price per million tokens where there is one. Local models additionally show loaded ● / unloaded ○, publisher, format (MLX/GGUF) and quantization, and can be loaded or ejected right from the menu.
 - **Keys stay secret** — stored in VS Code's encrypted Secret Storage, never in a settings file, never sent back to the UI, and never inherited by the tool processes the agent spawns (they are handed to OpenCode through a 0600 file reference, not the environment).
 - **Effort that matches the model** — the reasoning levels offered are the ones each model actually declares: Anthropic's low/medium/high/max, OpenAI's medium/high/xhigh, or the honest Auto/Off/On that most local models really support. Models with no reasoning support hide the control entirely.
@@ -99,7 +99,7 @@ The panel lives in the Activity Bar (or the secondary side bar). The composer ke
 - **VS Code** 1.104+
 - That's it to get started. For your own models, one of:
   - an **API key** for any provider in the [models.dev](https://models.dev) catalog (Anthropic, OpenAI, Google, OpenRouter, Groq, xAI, DeepSeek, Mistral, …), or
-  - a **local server** speaking the OpenAI-compatible API — [LM Studio](https://lmstudio.ai) (default `http://127.0.0.1:1234`), [Ollama](https://ollama.com) (`11434`), [vLLM](https://docs.vllm.ai) (`8000`), or anything else
+  - a **local server** speaking the OpenAI-compatible API — [LM Studio](https://lmstudio.ai) (default `http://127.0.0.1:1234`), [Ollama](https://ollama.com) (`11434`), [vLLM](https://docs.vllm.ai) (`8000`), [llama.cpp](https://github.com/ggml-org/llama.cpp) (`8080`, added by URL), oMLX, or anything else
 - *(LM Studio only, recommended)* the **`lms` CLI** as a fallback for automatic context-window management
 
 > **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`; an install on your `PATH` or in `~/.opencode/bin` is preferred over the bundled copy if present.
@@ -124,7 +124,7 @@ any time with **Switch to Release Version**.
 | `opencodeChat.defaultModel` | _(first)_ | Default model as `provider/model`, e.g. `anthropic/claude-sonnet-4-6` |
 | `opencodeChat.agent` | `build` | `build` or `plan` |
 | `opencodeChat.autoEnsureContext` | `true` | *(LM Studio only)* Reload the model with an adequate context window before prompting |
-| `opencodeChat.minContextLength` | `32768` | *(LM Studio only)* Context length to (re)load with |
+| `opencodeChat.minContextLength` | `32768` | Context length to (re)load LM Studio models with, and the window assumed for a local server that reports none. Servers started with a fixed window (llama.cpp `--ctx-size`, vLLM `--max-model-len`, oMLX) report their own and are used as-is |
 | `opencodeChat.defaultThinkingEffort` | `auto` | Starting reasoning effort for models you haven't set one for; snapped to the levels each model declares |
 | `opencodeChat.gpuOffload` | `max` | *(LM Studio only)* GPU offload for `lms load` |
 | `opencodeChat.healthCheckSeconds` | `30` | Local-endpoint poll cadence while connected (5–600). Cloud providers are never polled. Disconnected retries stay at 5s; the model list refreshes immediately while the model picker is open |
@@ -213,7 +213,7 @@ Each row shows the transport (local/remote) and the command or URL it was config
 ### Notes
 
 - **Applying changes.** Edits to `opencodeChat.mcpServers` (or VS Code's `mcp` setting) restart the agent automatically. Edits to the `.mcp.json` / `.vscode/mcp.json` files apply on the next **OpenCode Agent: Restart OpenCode Server** (or a window reload).
-- **Mind the context window.** Each MCP server adds its tool schemas to every request. Local models have far less context than cloud ones (OpenCode's own system prompt + built-in tools already use ~11k tokens), so enable only the servers you need and raise `opencodeChat.minContextLength` if tools start crowding out the conversation.
+- **Mind the context window.** Each MCP server adds its tool schemas to every request. Local models have far less context than cloud ones (OpenCode's own system prompt + built-in tools already use ~11k tokens), so enable only the servers you need. On LM Studio — or any server that does not report a window of its own — raising `opencodeChat.minContextLength` buys room; a server launched with a fixed window already reports it, so restart that server larger instead.
 - **`npx`/`uvx` on `PATH`.** Local servers launched with `npx`/`uvx` need Node and those tools on `PATH`. The extension augments `PATH` with common install locations (Homebrew, `~/.local/bin`, nvm/fnm, bun, cargo), but if a server shows as **failed**, check **OpenCode Agent: Show Logs**.
 
 ## How it works

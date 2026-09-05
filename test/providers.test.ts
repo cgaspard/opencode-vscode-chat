@@ -342,6 +342,70 @@ test('a local model with no live metadata still lists, from the config alone', (
   assert.equal(model.maxContextLength, 32768, 'falls back to the declared limit');
 });
 
+// A llama.cpp endpoint: no load lifecycle, but it knows its own window because
+// the process was started with `--ctx-size 262144`. That window is the budget —
+// declaring it means OpenCode packs against 256K instead of compacting at 32K,
+// and the picker states it rather than offering presets that go nowhere.
+const LLAMA: ProviderShape = {
+  id: 'llamacpp',
+  name: 'llama.cpp',
+  models: {
+    'qwen3.8-flash-next': {
+      name: 'qwen3.8-flash-next',
+      limit: { context: 262144 },
+    },
+  },
+};
+const LLAMA_CONN: ProviderConnection[] = [
+  {
+    id: 'l2',
+    kind: 'local',
+    providerID: 'llamacpp',
+    name: 'llama.cpp',
+    flavor: 'openai-compatible',
+  },
+];
+
+test('a local server that fixed its own window is marked windowFixed', () => {
+  const local = new Map<string, LocalModelShape>([
+    [
+      'llamacpp/qwen3.8-flash-next',
+      {
+        id: 'qwen3.8-flash-next',
+        displayName: 'qwen3.8-flash-next',
+        maxContextLength: 262144,
+      },
+    ],
+  ]);
+  const [model] = assembleModels([LLAMA], LLAMA_CONN, local);
+  assert.equal(model.maxContextLength, 262144);
+  assert.equal(model.lifecycle, false, 'llama.cpp cannot load or eject a model');
+  assert.equal(model.windowFixed, true, 'the setting cannot move a window fixed at launch');
+});
+
+// The laundering guard. `maxContextLength` falls back to `info.limit.context`,
+// which is OUR declaration — on an unreachable endpoint that is just the
+// minContextLength setting come back around. Treating it as a reported window
+// would tell the user "the server says 32K, and you may not change it", which
+// is exactly backwards: the setting is the one thing they can change.
+test('an unreachable local endpoint is not treated as having a fixed window', () => {
+  const [model] = assembleModels([LLAMA], LLAMA_CONN);
+  assert.equal(model.maxContextLength, 262144, 'falls back to the declared limit');
+  assert.equal(model.windowFixed, false);
+});
+
+// LM Studio is the exception: it loads a model at whatever window we name, so
+// the setting is live there even though it also reports a real maximum.
+test('an LM Studio model keeps an adjustable window', () => {
+  const local = new Map<string, LocalModelShape>([
+    [
+      'lm-studio/qwen/qwen3-coder-30b',
+      { id: 'qwen/qwen3-coder-30b', displayName: 'qwen3-coder-30b', maxContextLength: 262144 },
+    ],
+  ]);
+  assert.equal(assembleModels([REAL[1]], CONNS, local)[0].windowFixed, false);
+});
+
 test('providers the registry does not know are dropped', () => {
   // OpenCode also picks providers up from ambient env vars (a stray
   // OPENAI_API_KEY). Those were never configured here, so offering their models

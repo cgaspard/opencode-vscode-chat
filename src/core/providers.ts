@@ -420,6 +420,14 @@ export interface AssembledModel {
   name: string;
   loaded?: boolean;
   lifecycle?: boolean;
+  /**
+   * True when the serving process fixed this window at launch and nothing here
+   * can move it — a local endpoint with no load lifecycle that reported its own
+   * window (llama.cpp's `--ctx-size`, vLLM's `--max-model-len`, oMLX's
+   * configured window). The context picker states the number instead of
+   * offering presets that would not take effect.
+   */
+  windowFixed?: boolean;
   contextLength?: number;
   maxContextLength?: number;
   toolUse?: boolean;
@@ -467,6 +475,7 @@ export function assembleModels(
       const local = localByRef.get(ref);
       const caps = info.capabilities;
       const variants = Object.keys(info.variants ?? {});
+      const lifecycle = conn.kind === 'local' && conn.flavor === 'lmstudio';
       out.push({
         id: ref,
         providerID: provider.id,
@@ -475,7 +484,14 @@ export function assembleModels(
         modelID,
         name: local?.displayName ?? info.name ?? modelID,
         loaded: local ? local.state === 'loaded' : undefined,
-        lifecycle: conn.kind === 'local' && conn.flavor === 'lmstudio',
+        lifecycle,
+        // Fixed only when the *endpoint itself* reported a window and we have
+        // no way to change it. `maxContextLength` below also falls back to
+        // `info.limit.context` — our own declaration, which on an unreachable
+        // endpoint is just the minContextLength setting come back around — so
+        // reading that would launder a setting default into "the server says
+        // 32K, and you may not adjust it".
+        windowFixed: conn.kind === 'local' && !lifecycle && !!local?.maxContextLength,
         contextLength: local?.loadedContextLength,
         maxContextLength: local?.maxContextLength ?? info.limit?.context,
         toolUse: local?.toolUse ?? caps?.toolcall,

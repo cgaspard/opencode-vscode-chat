@@ -21,6 +21,14 @@ export interface UiModel {
   loaded?: boolean;
   /** True when this model can be loaded/ejected from the picker (LM Studio only). */
   lifecycle?: boolean;
+  /**
+   * True when the serving process fixed this window at launch and nothing here
+   * can move it — a local endpoint with no load lifecycle that reported its own
+   * window (llama.cpp's `--ctx-size`, vLLM's `--max-model-len`, oMLX's
+   * configured window). The context picker states the number instead of
+   * offering presets that would not take effect.
+   */
+  windowFixed?: boolean;
   contextLength?: number;
   maxContextLength?: number;
   toolUse?: boolean;

@@ -2056,14 +2056,17 @@ function renderCtxPresets(): void {
   }
   const m = state.models.find((x) => x.id === state.currentModel);
   el.innerHTML = '';
-  // Only a local endpoint's window is ours to set. For a cloud model the
-  // setting never reaches the provider, so offering presets would rewrite the
-  // *local* window and restart the server for no effect — state the real
+  // Only a window we can actually name gets presets. For a cloud model the
+  // setting never reaches the provider, and a llama.cpp/vLLM/oMLX process fixed
+  // its window at launch — either way, offering presets would rewrite the
+  // *local* setting and restart the server for no effect, so state the real
   // number instead of a control that does nothing.
   if (!isWindowManaged(m)) {
     if (note) {
       const max = m?.maxContextLength ? `${formatTokens(m.maxContextLength)} · ` : '';
-      note.textContent = `${max}set by ${m?.providerName || 'the provider'} — not adjustable from here.`;
+      note.textContent = m?.windowFixed
+        ? `${max}fixed when the server started — restart it with a different window to change this.`
+        : `${max}set by ${m?.providerName || 'the provider'} — not adjustable from here.`;
     }
     return;
   }

@@ -2,7 +2,7 @@
   "name": "opencode-vscode-chat",
   "displayName": "OpenCode Agent Panel",
   "description": "Bring your own models: an agentic coding panel powered by the open-source OpenCode agent. Add API keys for Anthropic, OpenAI, Google, OpenRouter and 170+ more, and/or point it at a local LM Studio, Ollama or vLLM server.",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "publisher": "cgaspard",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -141,7 +141,7 @@
         "opencodeChat.minContextLength": {
           "type": "number",
           "default": 32768,
-          "description": "Minimum context length to (re)load LM Studio models with when autoEnsureContext is enabled. OpenCode's agent system prompt + tools alone use ~11k tokens, so keep this comfortably large."
+          "description": "Context length to (re)load LM Studio models with when autoEnsureContext is enabled, and the window declared to OpenCode for any local server that does not report one. Servers started with a fixed window (llama.cpp --ctx-size, vLLM --max-model-len, oMLX) report their own and are used as-is. OpenCode's agent system prompt + tools alone use ~11k tokens, so keep this comfortably large."
         },
         "opencodeChat.defaultThinkingEffort": {
           "type": "string",
