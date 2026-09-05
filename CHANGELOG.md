@@ -3,6 +3,18 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.12.1
+
+_Released 2026-09-04_
+
+### Highlights
+- Empty grey boxes no longer appear in the middle of a reply. Every code block briefly drew one while it streamed, and a model that opened a fence without filling it left one behind for good.
+
+### Fixed
+- A code fence with nothing in it yet parses to an empty `<pre><code></code></pre>`, and the stylesheet paints any `pre` in a message as a bordered, padded code box — so an empty one rendered as a stray grey bar with no content in it. This was not an edge case: every code block passed through that state, because the opening fence arrives before the body does, and the bar sat there until the first token of content landed.
+- Parts that render to nothing are now hidden on the basis of what will actually be drawn, rather than whether the markdown source is blank. A lone opening fence is three non-blank characters that draw nothing, so the old source-text check passed it through — which is what let the empty box reach the screen in the first place.
+- Elements that show without carrying any text — an image, a rule, a table, a task-list checkbox — are counted as visible explicitly, so a part containing only an image is not mistaken for an empty one and hidden.
+
 ## v0.12.0
 
 _Released 2026-09-04_
