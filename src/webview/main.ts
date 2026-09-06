@@ -18,7 +18,10 @@ import {
   resolveAgent,
 } from '../core/agents';
 import {
+  addTurn,
   formatRate,
+  formatTotals,
+  newSessionTotals,
   recordAgent,
   formatThinkingLabel,
   newTurnRate,
@@ -177,6 +180,10 @@ let closeMenuOnLoad = false; // user hit Load from the menu — close it once th
 // boundaries are excluded — and prefers the exact token usage OpenCode reports on
 // the assistant message over the chars/4 estimate used mid-stream.
 let turnRate: TurnRate = newTurnRate();
+// Session-wide totals: what the whole conversation has cost, as opposed to the
+// context meter's "what is in the window right now". Only ever grows, and
+// survives compaction.
+let sessionTotals = newSessionTotals();
 // Compaction bookkeeping. OpenCode's summarize ("/compact") writes a user
 // message with a `compaction` part, then streams the summarizer model's own
 // reasoning + the summary template as an ordinary assistant turn. Neither is a
@@ -629,6 +636,12 @@ function build(): void {
   });
   document.getElementById('menu-attach')!.addEventListener('click', () => {
     addMenu.classList.add('hidden');
+    // Say why rather than opening a picker whose result would be discarded.
+    if (!modelTakesImages()) {
+      const name = state.models.find((x) => x.id === state.currentModel)?.name ?? 'This model';
+      setStatus(`${name} cannot read images — pick a vision model to attach one.`, 'warn');
+      return;
+    }
     fileInput.click();
   });
   document.getElementById('menu-ctxfile')!.addEventListener('click', (e) => {
@@ -1719,15 +1732,55 @@ function retireGoalRevision(): void {
   }
 }
 
+/**
+ * Image formats the server side can actually decode.
+ *
+ * OpenCode hands the raw bytes to a photon/WASM decoder (the Rust `image`
+ * crate) and ignores the declared mime entirely, so anything outside this list
+ * dies there with an opaque `ImageDecodeError` and a stack trace in the chat.
+ * SVG and HEIC are the easy accidents on macOS — both satisfy a naive
+ * `image/*` test, neither is decodable.
+ */
+const DECODABLE_IMAGE = /^image\/(png|jpeg|jpg|gif|webp|bmp|tiff?|x-icon|vnd\.microsoft\.icon)$/i;
+
+/**
+ * Whether the selected model can take an image at all.
+ *
+ * Only an explicit `false` blocks. A plain OpenAI-compatible server says
+ * nothing about vision, and reading silence as "no" would stop you attaching an
+ * image to a model that handles them fine. llama.cpp is what makes this worth
+ * checking: it reports `modalities.vision: false` unless the server was started
+ * with an `--mmproj` projector, and an image sent to one without it fails the
+ * whole request with a 500 rather than being ignored.
+ */
+function modelTakesImages(): boolean {
+  return state.models.find((x) => x.id === state.currentModel)?.vision !== false;
+}
+
 function addImage(file: File): Promise<void> {
   return new Promise((resolve) => {
+    if (!modelTakesImages()) {
+      const name = state.models.find((x) => x.id === state.currentModel)?.name ?? 'This model';
+      setStatus(`${name} cannot read images — attachment skipped.`, 'warn');
+      return resolve();
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      state.pendingImages.push({
-        mime: file.type || 'image/png',
-        dataUrl: String(reader.result),
-        name: file.name || 'pasted-image',
-      });
+      const dataUrl = String(reader.result);
+      // Take the type from the data URL, which is what the browser actually
+      // detected. `file.type` is empty for plenty of drops, and defaulting that
+      // to 'image/png' (as this used to) stamped a non-image as a PNG — which
+      // is precisely what got it past the server's `image/*` gate and into a
+      // decoder that then choked on it.
+      const mime = /^data:([^;,]+)/.exec(dataUrl)?.[1] ?? file.type ?? '';
+      if (!DECODABLE_IMAGE.test(mime)) {
+        setStatus(
+          `${file.name || 'That file'} is ${mime || 'of unknown type'} — not an image format that can be sent.`,
+          'warn',
+        );
+        return resolve();
+      }
+      state.pendingImages.push({ mime, dataUrl, name: file.name || 'pasted-image' });
       renderThumbs();
       resolve();
     };
@@ -2651,14 +2704,24 @@ function renderMeter(): void {
       label += ' · compacted';
     }
   }
+  // Session spend, after the window figure: the meter says how full the window
+  // is now, this says what the conversation has cost in total. Compaction resets
+  // the former and never the latter, which is exactly why both are worth having.
+  const totals = formatTotals(sessionTotals);
+  if (totals) {
+    label += ` · ${totals}`;
+  }
   ctxLabelEl.textContent = label;
   const tip = state.pendingCompaction
     ? 'Conversation was compacted. The exact reduced size shows after your next message.'
     : estimated
       ? 'Estimated context usage (includes the agent system prompt + tools). LM Studio does not report exact token usage to OpenCode.'
       : 'Context window usage';
-  ctxMeterEl.title = tip;
-  ctxLabelEl.title = tip;
+  const sessionTip = totals
+    ? `\n\nSession so far: ${sessionTotals.input + sessionTotals.output} tokens (${sessionTotals.input} in, ${sessionTotals.output} out${sessionTotals.reasoning > 0 ? `, of which ${sessionTotals.reasoning} thinking` : ''}) over ${sessionTotals.turns} turn${sessionTotals.turns === 1 ? '' : 's'}, and the time the model spent generating. Totals keep counting across a compaction; the window figure does not.`
+    : '';
+  ctxMeterEl.title = tip + sessionTip;
+  ctxLabelEl.title = tip + sessionTip;
 }
 
 // ---------------------------------------------------------------------------
@@ -2683,6 +2746,7 @@ function clearConversation(): void {
     .forEach((n) => n.remove());
   state.realTokens = 0;
   state.compacted = false;
+  sessionTotals = newSessionTotals(); // a fresh conversation has spent nothing
   lastErrorText = '';
   lastMsgStamp = 0; // fresh conversation — no gap to measure against
   firstSeen.clear();
@@ -3688,6 +3752,8 @@ function appendGenStat(): void {
   if (!last || last.querySelector('.gen-stat')) {
     return;
   }
+  addTurn(sessionTotals, rate);
+  renderMeter(); // the session line lives on the meter row
   const el = document.createElement('div');
   el.className = 'gen-stat';
   el.innerHTML = `${escapeHtml(formatRate(rate))} · ${stampSpan(Date.now())}`;

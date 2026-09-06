@@ -3,6 +3,28 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.14.0
+
+_Released 2026-09-05_
+
+### Highlights
+- A local server that cannot see images no longer lets you attach one. llama.cpp states this on `/props`, and sending an image to a server started without a projector failed the whole request rather than degrading.
+- Thinking tokens are counted in the tok/s figure again. On providers that report reasoning separately from output they were silently dropped, so the rate read far lower than the model was actually running.
+- The context row now also carries what the whole conversation has cost — total tokens and total generation time, side by side with the window figure.
+
+### Added
+- The context row shows session totals after the window figure, e.g. "164K / 256K · 64% · 257K tokens · 14m 00s". These are deliberately not the same measurement as the meter: the window figure is what is in context right now and a compaction resets it, while the totals only ever grow and survive compaction — they are what the conversation actually spent. Hovering gives the in/out/thinking split and the turn count. The figure is marked with a leading `~` if any turn was estimated rather than reported, and the clock is generation time, excluding tool calls and step boundaries, exactly as tok/s already was.
+- Vision support is read from llama.cpp's `/props`, which reports `modalities.vision`. It is false unless the server was started with an `--mmproj` projector, and nothing on the OpenAI-compatible `/v1/models` surface carries this, so until now every llama.cpp model looked like it might accept images.
+
+### Changed
+- Attaching an image to a model that reports no vision support is refused in the composer, with a message naming the model, instead of being sent and failing server-side. Only an explicit "no" blocks — a server that says nothing about vision is left alone, since most OpenAI-compatible servers report nothing and treating silence as a refusal would block models that handle images fine.
+- An attachment's type is now taken from the data URL the browser produced rather than defaulting to `image/png` when the file carried no type. That default was a guess presented as a fact, and it is what allowed a non-image to pass the server's `image/*` check and reach a decoder that then could not read it.
+- Attachments are limited to formats the server side can actually decode — PNG, JPEG, GIF, WebP, BMP, TIFF and ICO. SVG and HEIC satisfy a naive `image/*` test but cannot be decoded, and on macOS both are easy to pick by accident; they are now refused in the composer with an explanation rather than failing later.
+
+### Fixed
+- Thinking tokens are no longer dropped from the generation rate. Whether a provider folds its reasoning count into `output` or reports the two side by side varies, and this assumed the first unconditionally — so on a provider doing the second, every thinking token vanished from the total and from tok/s, and the number visibly fell the moment exact usage arrived, because the mid-stream estimate had counted them. The two readings are now told apart per turn by comparing the reported figure against the characters that actually streamed, so thinking is counted once and never twice.
+- The context row truncates on one line instead of wrapping. With session totals alongside the window figure the text can outrun a narrow side panel, and wrapping pushed the composer down as you typed.
+
 ## v0.12.1
 
 _Released 2026-09-04_

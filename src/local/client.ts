@@ -426,8 +426,8 @@ export class LocalClient {
           (m) => m && typeof m.id === 'string' && !/embed/i.test(m.id),
         );
         // Only llama.cpp nests its window under `meta.n_ctx`, and only there is
-        // the extra /props round-trip worth making — see slotContext().
-        const slot = rows.some((m) => m.meta?.n_ctx) ? await this.slotContext() : undefined;
+        // the extra /props round-trip worth making — see llamaCppProps().
+        const props = rows.some((m) => m.meta?.n_ctx) ? await this.llamaCppProps() : {};
         return rows.map(
           (m): LocalModel => ({
             id: m.id,
@@ -438,7 +438,12 @@ export class LocalClient {
             // `meta.n_ctx`. Reading none of them leaves this undefined and the
             // picker falls back to the `minContextLength` setting, reporting a
             // window that has nothing to do with the server's actual limit.
-            maxContextLength: contextFromModelRow(m, slot),
+            maxContextLength: contextFromModelRow(m, props.slotContext),
+            // Left unset when nothing said either way: unknown is not the same
+            // as "no", and only llama.cpp reports this on a plain /v1 surface.
+            // /props describes the process rather than a row, which is exact
+            // here — a llama.cpp process serves exactly one model.
+            vision: props.vision,
           }),
         );
       }
@@ -449,33 +454,47 @@ export class LocalClient {
   }
 
   /**
-   * llama.cpp's per-request context window, from `/props`.
+   * What llama.cpp's `/props` says about the server it is running.
    *
-   * `/v1/models` reports `meta.n_ctx` — the window the *process* holds, which
-   * `--parallel N` slices into N independent slots. A server started with
-   * `--ctx-size 262144 --parallel 4` gives any single request 65536, so
-   * declaring `meta.n_ctx` there would overstate the budget 4× and OpenCode
-   * would pack prompts the server cannot accept.
+   * **Context.** `/v1/models` reports `meta.n_ctx` — the window the *process*
+   * holds, which `--parallel N` slices into N independent slots. A server
+   * started with `--ctx-size 262144 --parallel 4` gives any single request
+   * 65536, so declaring `meta.n_ctx` there would overstate the budget 4× and
+   * OpenCode would pack prompts the server cannot accept.
+   * `default_generation_settings.n_ctx` is the figure llama.cpp has already
+   * divided per slot — the honest per-request ceiling.
    *
-   * `/props` carries `default_generation_settings.n_ctx`, which llama.cpp has
-   * already divided per slot — the honest per-request ceiling. Returns
-   * undefined when /props is unavailable (older builds, or `--no-props`),
-   * leaving the caller with the process window it already has.
+   * **Vision.** `modalities.vision` is the only place a llama.cpp server states
+   * whether it can take images: it is false unless the server was started with
+   * an `--mmproj` projector, and sending an image to one without it fails the
+   * whole request with a 500 ("image input is not supported"). The plain
+   * OpenAI-compatible `/v1/models` surface carries nothing about this, so
+   * without reading it here every llama.cpp model looks like it might see.
+   *
+   * Both come back undefined when /props is unavailable (older builds, or
+   * `--no-props`), which callers read as "unknown" rather than as a "no".
    */
-  private async slotContext(): Promise<number | undefined> {
+  private async llamaCppProps(): Promise<{ slotContext?: number; vision?: boolean }> {
     try {
       const res = await fetch(`${this.rest}/props`, {
         signal: AbortSignal.timeout(4000),
         headers: this.headers(),
       });
       if (!res.ok) {
-        return undefined;
+        return {};
       }
-      const json = (await res.json()) as { default_generation_settings?: { n_ctx?: number } };
+      const json = (await res.json()) as {
+        default_generation_settings?: { n_ctx?: number };
+        modalities?: { vision?: boolean };
+      };
       const n = json?.default_generation_settings?.n_ctx;
-      return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+      const vision = json?.modalities?.vision;
+      return {
+        slotContext: typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined,
+        vision: typeof vision === 'boolean' ? vision : undefined,
+      };
     } catch {
-      return undefined; // not a llama.cpp build that serves /props — meta.n_ctx stands
+      return {}; // not a llama.cpp build that serves /props — meta.n_ctx stands
     }
   }
 
