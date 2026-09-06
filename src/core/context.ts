@@ -87,6 +87,51 @@ export function declaredContext(
   return clampContext(requested, modelMax);
 }
 
+/** What a server last granted for a given requested window, per model. */
+export interface ContextGrant {
+  target: number;
+  granted: number;
+}
+
+export interface ContextLoadState {
+  /** Model state as the server reports it ('loaded' | 'not-loaded' | ...). */
+  state?: string;
+  /** The window it is currently loaded with; 0 when not loaded. */
+  loaded: number;
+  /** The window we want it loaded with. */
+  target: number;
+  /** The last request/grant pair this server produced for this model. */
+  prior?: ContextGrant;
+}
+
+/**
+ * Whether to unload and reload a model to reach `target`.
+ *
+ * The subtle case is a server that grants LESS than asked. LM Studio will
+ * happily accept `context_length: 262144`, load the model at 131072 because
+ * that is all it can fit, and report the smaller number back. A plain
+ * `loaded >= target` test never becomes true for that model, so with
+ * autoEnsureContext on it unloads and reloads the weights before EVERY message
+ * — a 29GB round trip per prompt — only to land on the same window again.
+ *
+ * So a refusal has to be remembered. Once the server has answered a specific
+ * target with a smaller grant, a model sitting at that grant is as close to the
+ * target as this server will get, and asking again is pure cost. Changing the
+ * target, or ejecting the model, clears the memory and we try properly again.
+ */
+export function shouldReloadForContext(s: ContextLoadState): boolean {
+  if (s.state !== 'loaded' || s.loaded <= 0) {
+    return true; // nothing usable in memory — load it
+  }
+  if (s.loaded >= s.target) {
+    return false; // already at least as big as we asked for
+  }
+  if (s.prior && s.prior.target === s.target && s.loaded >= s.prior.granted) {
+    return false; // the server already refused this target and gave us this
+  }
+  return true;
+}
+
 const BASE_PRESETS = [8192, 16384, 32768, 65536, 131072, 262144];
 
 /**

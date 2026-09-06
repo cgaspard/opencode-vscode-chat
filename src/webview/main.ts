@@ -2139,11 +2139,19 @@ function renderCtxPresets(): void {
   // Presets are filtered to the selected model's real maximum (and always
   // include the exact max), so you can never pick more than the model supports.
   const presets = contextPresets(m?.maxContextLength);
+  // The window actually in force, when the server granted something other than
+  // what was asked for. Highlighting only the request would state a size that
+  // is not the one running.
+  const loadedNow = m?.loaded ? m.contextLength || 0 : 0;
   for (const v of presets) {
     const b = document.createElement('button');
-    b.className = 'ctx-preset' + (v === state.minContext ? ' active' : '');
+    const inForce = loadedNow > 0 && v === loadedNow && v !== state.minContext;
+    b.className =
+      'ctx-preset' + (v === state.minContext ? ' active' : '') + (inForce ? ' in-force' : '');
     b.textContent = formatTokens(v);
-    b.title = v.toLocaleString() + ' tokens';
+    b.title = inForce
+      ? `${v.toLocaleString()} tokens — currently loaded (the server did not grant the ${formatTokens(state.minContext)} requested)`
+      : v.toLocaleString() + ' tokens';
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       if (v === state.minContext) {

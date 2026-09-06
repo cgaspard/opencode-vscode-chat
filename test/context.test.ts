@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   clampContext,
+  shouldReloadForContext,
   computeWindow,
   contextFromModelRow,
   contextPresets,
@@ -161,4 +162,59 @@ test('computeWindow falls back to the configured window without model metadata',
   assert.equal(computeWindow(undefined, 32768), 32768);
   assert.equal(computeWindow({}, 32768), 32768);
   assert.equal(computeWindow(undefined, 0), 0);
+});
+
+
+// The expensive bug this guards. LM Studio accepts `context_length: 262144`,
+// loads a 29GB model at 131072 because that is all it can fit, and reports the
+// smaller number back. A plain `loaded >= target` test never becomes true, so
+// with autoEnsureContext on the model was unloaded and reloaded before EVERY
+// message and landed on the same 128K each time.
+test('shouldReloadForContext does not re-ask for a window the server already refused', () => {
+  const prior = { target: 262144, granted: 131072 };
+  assert.equal(
+    shouldReloadForContext({ state: 'loaded', loaded: 131072, target: 262144, prior }),
+    false,
+    'the server answered this exact target with this exact window',
+  );
+  // Without that memory it reloads — which is the correct FIRST attempt.
+  assert.equal(
+    shouldReloadForContext({ state: 'loaded', loaded: 131072, target: 262144 }),
+    true,
+  );
+});
+
+test('shouldReloadForContext reloads when the target changes', () => {
+  const prior = { target: 262144, granted: 131072 };
+  // Asking for something smaller than the refused target is a new question.
+  assert.equal(
+    shouldReloadForContext({ state: 'loaded', loaded: 131072, target: 65536, prior }),
+    false,
+    '128K already covers a 64K request',
+  );
+  assert.equal(
+    shouldReloadForContext({ state: 'loaded', loaded: 32768, target: 65536, prior }),
+    true,
+    'loaded window is genuinely too small and this target was never refused',
+  );
+});
+
+test('shouldReloadForContext loads when nothing usable is resident', () => {
+  assert.equal(shouldReloadForContext({ state: 'not-loaded', loaded: 0, target: 32768 }), true);
+  assert.equal(shouldReloadForContext({ state: 'loaded', loaded: 0, target: 32768 }), true);
+  assert.equal(shouldReloadForContext({ loaded: 131072, target: 32768 }), true, 'unknown state');
+});
+
+test('shouldReloadForContext leaves a big-enough window alone', () => {
+  assert.equal(shouldReloadForContext({ state: 'loaded', loaded: 262144, target: 262144 }), false);
+  assert.equal(shouldReloadForContext({ state: 'loaded', loaded: 262144, target: 131072 }), false);
+});
+
+// A short grant is evidence about a resident model under the memory pressure of
+// the moment. Eject it and that evidence is void — the next load tries properly.
+test('shouldReloadForContext retries once the grant memory is cleared', () => {
+  assert.equal(
+    shouldReloadForContext({ state: 'loaded', loaded: 131072, target: 262144, prior: undefined }),
+    true,
+  );
 });

@@ -3,7 +3,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { restRoot } from '../config';
-import { contextFromModelRow } from '../core/context';
+import {
+  type ContextGrant,
+  contextFromModelRow,
+  formatTokens,
+  shouldReloadForContext,
+} from '../core/context';
 import type { ReasoningCapability } from '../core/effort';
 import { ProbeStatus } from '../core/health';
 import type { LocalFlavor } from '../core/providers';
@@ -100,6 +105,13 @@ export class LocalClient {
     }
     this.flavor = flavor;
   }
+
+  /**
+   * What this server last granted for a requested window, per model id. A
+   * server that hands back less than we asked for has told us something we must
+   * remember — see shouldReloadForContext.
+   */
+  private grants = new Map<string, ContextGrant>();
 
   /** True when this endpoint supports load/eject and context enforcement. */
   get supportsLifecycle(): boolean {
@@ -527,8 +539,16 @@ export class LocalClient {
       const cap = model.maxContextLength ?? minContext;
       const target = Math.min(minContext, cap);
       const ctx = model.loadedContextLength ?? 0;
-      if (model.state === 'loaded' && ctx >= target) {
-        return { reloaded: false, context: ctx };
+      const prior = this.grants.get(modelId);
+      if (!shouldReloadForContext({ state: model.state, loaded: ctx, target, prior })) {
+        // Short of target only because the server already refused it. Say so
+        // once per load rather than silently leaving the user to notice that
+        // the size they picked never took.
+        const note =
+          ctx < target
+            ? `${prettyName(modelId)} loaded at ${formatTokens(ctx)} — the server would not grant the ${formatTokens(target)} requested.`
+            : undefined;
+        return { reloaded: false, context: ctx, note };
       }
       onProgress?.(`Loading ${prettyName(modelId)} with ${target.toLocaleString()} context…`);
       // Prefer the native REST API (no external CLI dependency).
@@ -538,7 +558,18 @@ export class LocalClient {
           await this.unloadInstance(id).catch(() => undefined);
         }
         const loaded = await this.loadModel(modelId, target);
-        return { reloaded: true, context: loaded.contextLength ?? target };
+        const granted = loaded.contextLength ?? target;
+        // Remember a short grant so the next message does not repeat the whole
+        // unload/load cycle to arrive at the same number.
+        this.grants.set(modelId, { target, granted });
+        return {
+          reloaded: true,
+          context: granted,
+          note:
+            granted < target
+              ? `${prettyName(modelId)} loaded at ${formatTokens(granted)} — the server would not grant the ${formatTokens(target)} requested.`
+              : undefined,
+        };
       } catch (restErr) {
         logError('REST model load failed, trying lms CLI fallback', restErr);
       }
@@ -584,6 +615,9 @@ export class LocalClient {
 
   /** Unload a specific loaded instance via REST. */
   async unloadInstance(instanceId: string): Promise<void> {
+    // Whatever the server granted last time is no longer evidence about a model
+    // that is not resident: memory pressure may have changed entirely.
+    this.grants.delete(instanceId);
     const res = await fetch(`${this.rest}/api/v1/models/unload`, {
       method: 'POST',
       headers: this.headers({ 'content-type': 'application/json' }),
@@ -597,6 +631,7 @@ export class LocalClient {
 
   /** Unload every loaded instance of a model (by model key). */
   async unloadModel(modelId: string): Promise<void> {
+    this.grants.delete(modelId);
     const ids = await this.loadedInstanceIds(modelId);
     for (const id of ids) {
       await this.unloadInstance(id).catch(() => undefined);
