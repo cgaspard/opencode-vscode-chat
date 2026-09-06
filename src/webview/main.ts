@@ -361,15 +361,17 @@ function build(): void {
         <input id="catalog-search" class="server-input" placeholder="Search providers and local servers…" />
         <div id="catalog-list" class="catalog-list"></div>
       </div>
-      <div class="model-menu-head">
-        <span>Models</span>
-        <button id="model-refresh" class="icon-btn" title="Rescan models">${icon.refresh}</button>
-      </div>
-      <div id="model-menu-list" class="model-menu-list"></div>
-      <div class="model-menu-foot" id="ctx-foot">
-        <span class="ctx-foot-label">Context window</span>
-        <div id="ctx-presets" class="ctx-presets"></div>
-        <span class="effort-note" id="ctx-note"></span>
+      <div id="models-section" class="models-section">
+        <div class="model-menu-head">
+          <span>Models</span>
+          <button id="model-refresh" class="icon-btn" title="Rescan models">${icon.refresh}</button>
+        </div>
+        <div id="model-menu-list" class="model-menu-list"></div>
+        <div class="model-menu-foot" id="ctx-foot">
+          <span class="ctx-foot-label">Context window</span>
+          <div id="ctx-presets" class="ctx-presets"></div>
+          <span class="effort-note" id="ctx-note"></span>
+        </div>
       </div>
     </div>
     <div id="behavior-menu" class="model-menu hidden">
@@ -711,7 +713,8 @@ function build(): void {
   // "Add provider…" expands the inline catalog form inside the combined menu.
   document.getElementById('provider-add-toggle')!.addEventListener('click', (e) => {
     e.stopPropagation();
-    document.getElementById('provider-add-form')!.classList.toggle('hidden');
+    const open = document.getElementById('provider-add-form')!.classList.toggle('hidden') === false;
+    setAddingProvider(open);
   });
   // Local-server form (modal).
   document.getElementById('local-save')!.addEventListener('click', (e) => {
@@ -2229,6 +2232,24 @@ function closeModelMenu(): void {
   modelMenu.classList.add('hidden');
   // Fold the add-provider form away with the menu.
   document.getElementById('provider-add-form')?.classList.add('hidden');
+  setAddingProvider(false);
+}
+
+/**
+ * Hand the menu over to the add-provider catalog, or give it back.
+ *
+ * The menu is one 52vh column, and the provider list and catalog are capped at
+ * 32vh each — so with the model list also holding its full height there was
+ * barely room left to show search results, which is the whole point of the
+ * form. While adding, the model list is not something you can act on anyway, so
+ * it stands down entirely and the provider list shrinks to a glance.
+ */
+function setAddingProvider(adding: boolean): void {
+  modelMenu.classList.toggle('adding', adding);
+  document.getElementById('models-section')?.classList.toggle('hidden', adding);
+  if (adding) {
+    (document.getElementById('catalog-search') as HTMLInputElement | null)?.focus();
+  }
 }
 
 // ---------------------------------------------------------------------------

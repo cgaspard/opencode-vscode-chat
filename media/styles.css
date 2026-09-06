@@ -2411,8 +2411,32 @@ body.compacting .send-btn {
    .hidden per component, not globally — without these the toggles are inert). */
 .spinner.hidden,
 .provider-add.hidden,
+.models-section.hidden,
 .menu-row.hidden {
   display: none;
+}
+
+/* Adding a provider: the catalog IS the task, so give it the panel. The menu is
+   one 52vh column and the provider list and catalog are capped at 32vh each, so
+   with the model list also at full height the search results were squeezed into
+   a few rows. The model list is not actionable mid-add, so it stands down (see
+   .models-section.hidden above) and the provider list shrinks to a glance. */
+.models-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.model-menu.adding .provider-list {
+  max-height: 18vh;
+}
+.model-menu.adding .provider-add {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.model-menu.adding .catalog-list {
+  max-height: none;
+  flex: 1 1 auto;
 }
 
 /* ---- Behavior menu, Claude-style compact layout --------------------------- */

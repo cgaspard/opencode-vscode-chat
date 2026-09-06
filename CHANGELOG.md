@@ -3,6 +3,18 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.14.1
+
+_Released 2026-09-05_
+
+### Highlights
+- Adding a provider now gets the panel to itself. The search results were being squeezed into a single visible row by the model list sitting below them.
+
+### Fixed
+- The add-provider catalog shares one fixed-height menu with the provider list and the model list, and nothing yielded when it opened — so the search results got whatever was left, measured at 40px in a typical side panel. That is one row: you were searching a catalog of 170+ providers through a slot that could show one of them at a time.
+- Opening the form now stands the model list down entirely — it is not something you can act on mid-add — and caps the provider list at a glance, handing the rest to the catalog. Same panel, same 400px-wide side bar, the results area goes from 40px to 265px. Closing the form, or the menu, puts everything back.
+- The search box takes focus when the form opens, so you can type straight into it.
+
 ## v0.14.0
 
 _Released 2026-09-05_
