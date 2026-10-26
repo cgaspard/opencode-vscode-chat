@@ -14,6 +14,7 @@ import type {
   Session,
   SkillsResponse,
 } from './protocol';
+import { fromEngineProviderID, toEngineProviderID } from '../core/providerIds';
 import { EventTranslator, type InboxItem, v1History, v2FormAnswer } from './translate';
 
 /** How a prompt reaches a session that is already working. */
@@ -24,6 +25,25 @@ const SYSTEM_ENTRY = 'opencode-vscode-chat.system'; // keys: ^[a-z0-9][a-z0-9._-
 
 /** Longest we wait for a compaction to finish before handing control back. */
 const COMPACT_TIMEOUT_MS = 900000;
+
+/** Ceiling for one SDK call, as the 1.x HTTP client had per request. */
+const REQ_TIMEOUT_MS = 30000;
+
+/** Reject with a TimeoutError (which the bridge treats as a lost connection) after `ms`. */
+function withTimeout<T>(p: Promise<T> | T, ms: number, what: string): Promise<T> {
+  if (!(p instanceof Promise)) {
+    return Promise.resolve(p);
+  }
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`OpenCode ${what} did not answer within ${ms / 1000}s`);
+      err.name = 'TimeoutError';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 type Listener = (event: OpencodeEvent) => void;
 
@@ -45,12 +65,48 @@ export class OpencodeV2Client {
   /** Last model/agent/system pushed to each session, to skip redundant switches. */
   private readonly sessionState = new Map<string, { model?: string; agent?: string; system?: string }>();
 
+  /** The SDK host behind a guard: see `guard`. */
+  private readonly host: SdkHost;
+  private closed = false;
+
   constructor(
-    private readonly host: SdkHost,
+    host: SdkHost,
     /** The workspace folder every request is located in. */
     private readonly directory: string,
     readonly version: string,
-  ) {}
+  ) {
+    this.host = this.guard(host, []);
+  }
+
+  /**
+   * Every SDK call goes through here. A 1.x server that went away failed fast
+   * ("connection refused") and the bridge reconnected; an embedded host that
+   * was closed (a settings change, a restart) would instead leave calls
+   * pending forever. So once disposed, calls reject at once with an error the
+   * bridge treats as a lost connection, and every call gets the same ceiling
+   * the 1.x client had. The event stream is exempt: it is meant to stay open.
+   */
+  private guard(target: any, path: string[]): any {
+    return new Proxy(target, {
+      get: (obj, prop) => {
+        const value = obj[prop];
+        if (typeof prop !== 'string') {
+          return value;
+        }
+        if (typeof value === 'function') {
+          const name = [...path, prop].join('.');
+          return (...args: unknown[]) => {
+            if (this.closed) {
+              return Promise.reject(new Error('OpenCode engine stopped'));
+            }
+            const result = value.apply(obj, args);
+            return name === 'event.subscribe' ? result : withTimeout(result, REQ_TIMEOUT_MS, name);
+          };
+        }
+        return value && typeof value === 'object' ? this.guard(value, [...path, prop]) : value;
+      },
+    });
+  }
 
   private get location() {
     return { location: { directory: this.directory } };
@@ -67,10 +123,11 @@ export class OpencodeV2Client {
     const names = new Map<string, string>(((providers?.data ?? []) as any[]).map((p) => [String(p.id), String(p.name ?? p.id)]));
     const byProvider = new Map<string, ProviderInfo>();
     for (const m of (models?.data ?? []) as any[]) {
-      const pid = String(m.providerID);
+      const enginePid = String(m.providerID);
+      const pid = fromEngineProviderID(enginePid);
       let p = byProvider.get(pid);
       if (!p) {
-        p = { id: pid, name: names.get(pid) ?? pid, models: {} };
+        p = { id: pid, name: names.get(enginePid) ?? pid, models: {} };
         byProvider.set(pid, p);
       }
       const input: string[] = Array.isArray(m.capabilities?.input) ? m.capabilities.input : ['text'];
@@ -243,7 +300,7 @@ export class OpencodeV2Client {
       if (st.model !== key) {
         await this.host.session.switchModel({
           sessionID,
-          model: { providerID: body.model.providerID, id: body.model.modelID, ...(body.variant ? { variant: body.variant } : {}) },
+          model: { providerID: toEngineProviderID(body.model.providerID), id: body.model.modelID, ...(body.variant ? { variant: body.variant } : {}) },
         });
         st.model = key;
       }
@@ -410,6 +467,7 @@ export class OpencodeV2Client {
 
   /** Stop the upstream subscription (the host itself is closed by its owner). */
   dispose(): void {
+    this.closed = true;
     this.upstream?.abort();
     this.upstream = undefined;
     this.listeners.clear();

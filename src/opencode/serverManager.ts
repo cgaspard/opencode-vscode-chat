@@ -7,6 +7,7 @@ import { declaredContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
 import { augmentedPath, withLocalEnvironment } from '../core/mcp';
 import { opencodePermission } from '../core/permission';
+import { toEngineProviderID } from '../core/providerIds';
 import type { ProviderConnection } from '../core/providers';
 import type { LocalEndpoints } from '../local/endpoints';
 import { log, logError } from '../logger';
@@ -42,6 +43,12 @@ export class OpencodeServerManager {
   private host: SdkHost | undefined;
   private client: OpencodeV2Client | undefined;
   private starting: Promise<ServerStartResult> | undefined;
+  /**
+   * The previous engine's shutdown. A new host must not open the same database
+   * and folders while the old one is still closing (two engines in one
+   * process over one SQLite file), so a start waits for this first.
+   */
+  private closing: Promise<void> = Promise.resolve();
   /**
    * A fingerprint of the provider set the running engine's config was built
    * from. The config is baked into the host at creation, so if anything it
@@ -123,6 +130,7 @@ export class OpencodeServerManager {
   }
 
   private async doStart(): Promise<ServerStartResult> {
+    await this.closing;
     const bakedIdentity = await this.currentIdentity();
     const configContent = await this.buildConfigContent();
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
@@ -182,7 +190,7 @@ export class OpencodeServerManager {
         // already serves Zen on its public key. With a key, declare it so the
         // paid tier is used instead.
         if (apiKey) {
-          provider[conn.providerID] = { options: this.apiKeyOption(conn.id, apiKey) };
+          provider[toEngineProviderID(conn.providerID)] = { options: this.apiKeyOption(conn.id, apiKey) };
         }
         continue;
       }
@@ -192,10 +200,10 @@ export class OpencodeServerManager {
           // would then show up in the picker as a provider with no models.
           continue;
         }
-        provider[conn.providerID] = { options: this.apiKeyOption(conn.id, apiKey) };
+        provider[toEngineProviderID(conn.providerID)] = { options: this.apiKeyOption(conn.id, apiKey) };
         continue;
       }
-      provider[conn.providerID] = {
+      provider[toEngineProviderID(conn.providerID)] = {
         npm: '@ai-sdk/openai-compatible',
         name: conn.name,
         options: {
@@ -235,7 +243,7 @@ export class OpencodeServerManager {
       // exported OPENAI_API_KEY) and auto-discover local servers — and its
       // internal title/summary agents could then bill a key the user never
       // gave this extension.
-      enabled_providers: connections.map(({ conn }) => conn.providerID),
+      enabled_providers: connections.map(({ conn }) => toEngineProviderID(conn.providerID)),
       // Tool-approval posture (default / strict / bypass), read fresh so a
       // mode change applies on restart. Every mode keeps the built-in
       // `question` tool at "allow": the picker is the interaction (the bridge
@@ -246,6 +254,9 @@ export class OpencodeServerManager {
         build: { prompt: BUILD_PROMPT },
         plan: { prompt: PLAN_PROMPT },
       },
+      // OpenCode 2 ships its todo tool behind a flag; the panel's live todo
+      // list renders from it.
+      experimental: { todo: true },
       ...(Object.keys(provider).length ? { provider } : {}),
       ...(Object.keys(mcp).length ? { mcp } : {}),
     };
@@ -365,7 +376,13 @@ export class OpencodeServerManager {
     this.host = undefined;
     this.client = undefined;
     this.bakedIdentity = undefined;
-    // Closing releases the engine's watchers, MCP children and database.
-    void host?.close().catch((err: unknown) => logError('closing embedded opencode', err));
+    // Closing releases the engine's watchers, MCP children and database. The
+    // next start waits for it (see `closing`).
+    if (host) {
+      const previous = this.closing;
+      this.closing = previous
+        .then(() => host.close())
+        .catch((err: unknown) => logError('closing embedded opencode', err));
+    }
   }
 }

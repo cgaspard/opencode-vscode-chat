@@ -143,7 +143,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const added = await deps.registry.addLocal('E2E Fake', url, { flavor: 'lmstudio' });
         await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
-        return { id: added.id };
+        return { id: added.id, providerID: added.providerID };
       }),
       vscode.commands.registerCommand(
         'opencodeChat._test.restoreServer',

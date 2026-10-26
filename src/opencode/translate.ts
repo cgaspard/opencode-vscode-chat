@@ -6,6 +6,7 @@
 //
 // No I/O here: everything is unit-tested against payloads captured from a live
 // OpenCode 2.1.4 (test/translate.test.ts).
+import { fromEngineProviderID } from '../core/providerIds';
 import type { MessageWithParts, OpencodeEvent, Part, QuestionAnswer, QuestionInfo } from './protocol';
 
 /** An event as the v2 SDK's `event.subscribe()` yields it. */
@@ -199,6 +200,8 @@ export function v2FormAnswer(form: any, answers: QuestionAnswer[]): Record<strin
 
 interface ToolState {
   mid: string;
+  /** The turn-level message the card renders under. */
+  tid: string;
   name: string;
   input: Record<string, unknown>;
   metadata?: Record<string, unknown>;
@@ -211,6 +214,18 @@ interface ToolState {
  * they are delivered).
  */
 export class EventTranslator {
+  /**
+   * The 1.x message id a session's running turn renders under. 1.x had one
+   * assistant message per turn, spanning every tool step; v2 has one per step.
+   * The webview keys per-turn UI on the message (one bubble, one live todo
+   * list, one timing stat), so a turn's steps share the id of its first step —
+   * until the run ends, or a steered message is delivered mid-turn (the steps
+   * after it then render below the user's message, in the order the model saw
+   * them).
+   */
+  private readonly turns = new Map<string, string>();
+  /** step message id -> its turn message id. */
+  private readonly stepTurn = new Map<string, string>();
   private readonly text = new Map<string, string>();
   private readonly tools = new Map<string, ToolState>();
   private readonly inbox = new Map<string, InboxItem & { raw: any }>();
@@ -232,8 +247,10 @@ export class EventTranslator {
     const d = e.data ?? {};
     const sid: string | undefined = d.sessionID;
     const mid: string | undefined = d.assistantMessageID;
+    // The turn-level message every part of this step renders under.
+    const tid = mid ? this.turnOf(sid, mid) : undefined;
     const ev = (type: string, properties: Record<string, unknown>): OpencodeEvent => ({ type, properties });
-    const part = (p: Record<string, unknown>) => ev('message.part.updated', { part: { sessionID: sid, messageID: mid, ...p } });
+    const part = (p: Record<string, unknown>) => ev('message.part.updated', { part: { sessionID: sid, messageID: tid, ...p } });
 
     switch (e.type) {
       // -- assistant turn structure -------------------------------------------
@@ -241,13 +258,13 @@ export class EventTranslator {
         return [
           ev('message.updated', {
             info: {
-              id: mid,
+              id: tid,
               sessionID: sid,
               role: 'assistant',
               time: { created: d.started ?? Date.now() },
               agent: d.agent,
               modelID: d.model?.id,
-              providerID: d.model?.providerID,
+              providerID: d.model?.providerID ? fromEngineProviderID(d.model.providerID) : undefined,
             },
           }),
           part({ id: stepStartId(mid!), type: 'step-start' }),
@@ -256,7 +273,7 @@ export class EventTranslator {
         return [
           part({ id: stepFinishId(mid!), type: 'step-finish', reason: d.finish, cost: d.cost, tokens: d.tokens }),
           ev('message.updated', {
-            info: { id: mid, sessionID: sid, role: 'assistant', time: { created: 0, completed: Date.now() }, tokens: d.tokens, cost: d.cost },
+            info: { id: tid, sessionID: sid, role: 'assistant', time: { created: 0, completed: Date.now() }, tokens: d.tokens, cost: d.cost },
           }),
         ];
 
@@ -272,7 +289,7 @@ export class EventTranslator {
       case 'session.reasoning.delta': {
         const id = e.type === 'session.text.delta' ? textPartId(mid!, d.ordinal ?? 0) : reasoningPartId(mid!, d.ordinal ?? 0);
         this.text.set(id, (this.text.get(id) ?? '') + String(d.delta ?? ''));
-        return [ev('message.part.delta', { sessionID: sid, messageID: mid, partID: id, field: 'text', delta: d.delta ?? '' })];
+        return [ev('message.part.delta', { sessionID: sid, messageID: tid, partID: id, field: 'text', delta: d.delta ?? '' })];
       }
       case 'session.text.ended':
       case 'session.reasoning.ended': {
@@ -285,7 +302,7 @@ export class EventTranslator {
 
       // -- tool calls ----------------------------------------------------------
       case 'session.tool.input.started': {
-        const t: ToolState = { mid: mid!, name: String(d.name ?? 'tool'), input: {} };
+        const t: ToolState = { mid: mid!, tid: tid!, name: String(d.name ?? 'tool'), input: {} };
         this.tools.set(d.id, t);
         return [this.toolPart(sid, d.id, t, { status: 'pending' })];
       }
@@ -322,12 +339,15 @@ export class EventTranslator {
 
       // -- end of a run --------------------------------------------------------
       case 'session.execution.succeeded':
+        this.endTurn(sid);
         return [ev('session.idle', { sessionID: sid })];
       case 'session.execution.interrupted':
+        this.endTurn(sid);
         // 1.x reported a stop as MessageAbortedError, which the webview renders
         // as one muted "Stopped" chip rather than an error bubble.
         return [ev('session.error', { sessionID: sid, error: ABORTED }), ev('session.idle', { sessionID: sid })];
       case 'session.execution.failed':
+        this.endTurn(sid);
         return [ev('session.error', { sessionID: sid, error: v1Error(d.error) }), ev('session.idle', { sessionID: sid })];
       case 'session.retry.scheduled':
         return [ev('session.retry', { sessionID: sid, attempt: d.attempt, at: d.at, message: errorMessage(d.error) })];
@@ -391,6 +411,7 @@ export class EventTranslator {
       case 'session.inbox.delivered': {
         const entry = this.inbox.get(d.inboxID);
         this.inbox.delete(d.inboxID);
+        this.endTurn(sid); // steps after a steered message render below it
         // The user's bubble enters the transcript when the model actually sees
         // it, so the conversation reads in the order the model received it.
         const out: OpencodeEvent[] = [ev('inbox.delivered', { sessionID: sid, inboxID: d.inboxID })];
@@ -405,10 +426,32 @@ export class EventTranslator {
     }
   }
 
+  /** The turn message for a step: the first step of the session's current turn. */
+  private turnOf(sid: string | undefined, mid: string): string {
+    // Steps are keyed by message id too, so a late event for a step finds its
+    // turn even without a session id.
+    const known = this.stepTurn.get(mid);
+    if (known) {
+      return known;
+    }
+    const key = sid ?? '';
+    let turn = this.turns.get(key);
+    if (!turn) {
+      turn = mid;
+      this.turns.set(key, turn);
+    }
+    this.stepTurn.set(mid, turn);
+    return turn;
+  }
+
+  private endTurn(sid: string | undefined): void {
+    this.turns.delete(sid ?? '');
+  }
+
   private tool(callID: string, mid: string | undefined): ToolState {
     let t = this.tools.get(callID);
     if (!t) {
-      t = { mid: mid ?? '', name: 'tool', input: {} };
+      t = { mid: mid ?? '', tid: mid ? this.turnOf(undefined, mid) : '', name: 'tool', input: {} };
       this.tools.set(callID, t);
     }
     return t;
@@ -421,7 +464,7 @@ export class EventTranslator {
         part: {
           id: toolPartId(t.mid, callID),
           sessionID: sid,
-          messageID: t.mid,
+          messageID: t.tid,
           type: 'tool',
           callID,
           tool: v1ToolName(t.name),
@@ -465,14 +508,32 @@ function userMessage(sid: string, mid: string, payload: any, created: number): M
 export function v1History(sessionID: string, rows: any[]): MessageWithParts[] {
   const out: MessageWithParts[] = [];
   const sorted = [...rows].sort((a, b) => Number(a?.time?.created ?? 0) - Number(b?.time?.created ?? 0));
+  // A turn's steps (one v2 assistant message each) fold into one 1.x message,
+  // matching the live grouping in EventTranslator; anything else ends the turn.
+  let turn: MessageWithParts | undefined;
   for (const m of sorted) {
     const created = Number(m?.time?.created ?? 0);
+    if (m?.type === 'assistant') {
+      const step = assistantMessage(sessionID, m);
+      if (!turn) {
+        turn = step;
+        out.push(turn);
+      } else {
+        turn.parts.push(...step.parts.map((p) => ({ ...p, messageID: turn!.info.id })));
+        turn.info = {
+          ...turn.info,
+          time: { created: turn.info.time.created, completed: step.info.time.completed ?? turn.info.time.completed },
+          tokens: step.info.tokens ?? turn.info.tokens,
+          cost: (turn.info.cost ?? 0) + (step.info.cost ?? 0),
+          ...(step.info.error ? { error: step.info.error } : {}),
+        };
+      }
+      continue;
+    }
+    turn = undefined;
     switch (m?.type) {
       case 'user':
         out.push(userMessage(sessionID, m.id, { text: m.text, files: m.files }, created));
-        break;
-      case 'assistant':
-        out.push(assistantMessage(sessionID, m));
         break;
       case 'compaction': {
         const marker = `${m.id}:marker`;
@@ -488,7 +549,7 @@ export function v1History(sessionID: string, rows: any[]): MessageWithParts[] {
         break;
       }
       default:
-        break; // idle markers, synthetic notes: not chat
+        break; // idle markers, synthetic notes: not chat (but they do end a turn)
     }
   }
   return out;
@@ -533,7 +594,7 @@ function assistantMessage(sessionID: string, m: any): MessageWithParts {
       role: 'assistant',
       time: { created: Number(m.time?.created ?? 0), completed: Number(m.time?.completed ?? 0) || undefined },
       modelID: m.model?.id,
-      providerID: m.model?.providerID,
+      providerID: m.model?.providerID ? fromEngineProviderID(m.model.providerID) : undefined,
       tokens: m.tokens,
       cost: m.cost,
       ...(m.error ? { error: v1Error(m.error) } : {}),

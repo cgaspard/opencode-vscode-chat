@@ -145,21 +145,52 @@ test('compaction completion reports session.compacted with the summary', () => {
   assert.match(String((out[0].properties as any).summary), /Objective/);
 });
 
-test('history comes back oldest first with user text, tool and step-finish parts', () => {
+test('history comes back oldest first, a turn\'s steps folded into one message', () => {
   const sid = 'ses_x';
   const h = v1History(sid, fx.history);
   assert.deepEqual(
     h.map((m) => m.info.role),
-    ['user', 'assistant', 'assistant'],
-    'idle markers are not chat',
+    ['user', 'assistant'],
+    'two steps (tool call, then answer) are one turn; idle markers are not chat',
   );
   assert.match((h[0].parts[0] as any).text, /write tool/);
-  const tool = h[1].parts.find((p) => p.type === 'tool') as any;
+  const turn = h[1];
+  const tool = turn.parts.find((p) => p.type === 'tool') as any;
   assert.equal(tool.state.status, 'completed');
-  assert.equal(tool.id, toolPartId(h[1].info.id, tool.callID), 'same id as the live part');
-  assert.equal(h[2].parts.find((p) => p.type === 'text')!.id, textPartId(h[2].info.id, 0));
-  assert.equal(h[2].parts.at(-1)!.type, 'step-finish');
-  assert.ok(h[2].info.tokens, 'tokens kept for the context meter');
+  const steps = fx.history.filter((m: any) => m.type === 'assistant').sort((a: any, b: any) => a.time.created - b.time.created);
+  assert.equal(turn.info.id, steps[0].id, 'the turn takes its first step\'s id');
+  assert.equal(tool.id, toolPartId(steps[0].id, tool.callID), 'part ids keep their own step, as live parts do');
+  assert.ok(turn.parts.every((p) => p.messageID === turn.info.id), 'every part renders under the turn');
+  assert.equal(turn.parts.filter((p) => p.type === 'step-finish').length, 2, 'one step-finish per step');
+  assert.ok(turn.info.tokens, 'tokens kept for the context meter');
+});
+
+test('live: a turn\'s steps share one message id, matching history', () => {
+  const { out } = run(fx.toolWrite);
+  const info = out.filter((e) => e.type === 'message.updated').map((e) => (e.properties as any).info);
+  const assistantIds = new Set(info.filter((i) => i.role === 'assistant').map((i) => i.id));
+  const userIds = new Set(info.filter((i) => i.role === 'user').map((i) => i.id));
+  assert.equal(assistantIds.size, 1, 'one assistant message for the whole turn');
+  const partMsgs = new Set(
+    out
+      .filter((e) => e.type === 'message.part.updated')
+      .map((e) => (e.properties as any).part.messageID)
+      .filter((id) => !userIds.has(id)),
+  );
+  assert.deepEqual([...partMsgs], [...assistantIds], 'every assistant part renders under the turn');
+});
+
+test('live: a new run starts a new turn, and so does a message delivered mid-turn', () => {
+  const t = new EventTranslator();
+  const step = (mid: string) => t.translate({ type: 'session.step.started', data: { sessionID: 's', assistantMessageID: mid } });
+  const idOf = (evs: Array<{ type: string; properties: any }>) => evs.find((e) => e.type === 'message.updated')!.properties.info.id;
+  assert.equal(idOf(step('a1')), 'a1');
+  assert.equal(idOf(step('a2')), 'a1', 'second step of the same run joins the turn');
+  t.translate({ type: 'session.inbox.enqueued', data: { sessionID: 's', inboxID: 'u2', item: { type: 'user', payload: { text: 'steer' }, delivery: 'steer' } } });
+  t.translate({ type: 'session.inbox.delivered', data: { sessionID: 's', inboxID: 'u2' } });
+  assert.equal(idOf(step('a3')), 'a3', 'steps after a steered message render below it');
+  t.translate({ type: 'session.execution.succeeded', data: { sessionID: 's' } });
+  assert.equal(idOf(step('b1')), 'b1', 'a new run is a new turn');
 });
 
 test('a compaction in history becomes a marker plus the summary turn the webview folds', () => {

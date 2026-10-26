@@ -98,10 +98,10 @@ function rootsFor(paths: EmbeddedPaths): Record<string, string> {
  * Isolation from the user's own OpenCode install:
  *  - `config.directory` points the global config dir at our private folder, so
  *    ~/.config/opencode/opencode.json (its MCP servers, providers) never loads;
- *  - `config.claude: false` keeps ~/.claude skills and settings out;
  *  - the database and every global path live under `paths.root`.
- * The workspace's own `.opencode/` (agents, commands, skills) stays enabled via
- * `config.project`, which is what makes user-defined agents work.
+ * What the panel deliberately shares, as it always has: the workspace's own
+ * `.opencode/` (agents, commands, skills) via `config.project`, and Claude
+ * Code's `.claude/` skills (global and project) via `config.claude`.
  */
 export async function createHost(
   extensionPath: string,
@@ -117,6 +117,10 @@ export async function createHost(
   // OpenCode 2 migrates 1.x sessions found in it, so chat history survives the
   // upgrade; a fresh path would silently start everyone from empty.
   const dbPath = path.join(roots.data, 'opencode', 'opencode.db');
+  // OpenCode creates the database file (to restrict it to the owner) while it
+  // is still creating its own data folder, concurrently: on a first start the
+  // file can lose that race and fail with ENOENT. Make the folder first.
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   resyncLegacyHistory(dbPath);
   return sdk.OpenCode.create({
     app: { name: 'opencode-vscode-chat' },
@@ -125,7 +129,7 @@ export async function createHost(
       content: configContent,
       directory: path.join(roots.config, 'opencode'),
       project: true,
-      claude: false,
+      claude: true,
     },
   });
 }

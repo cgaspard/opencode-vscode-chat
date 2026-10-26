@@ -4440,7 +4440,8 @@ function installTestHook(): void {
                 : el.getAttribute(m.prop as string);
         reply({ count: els.length, value: els[0] ? read(els[0]) : null, values: els.map(read) });
       } else if (m.__test__ === 'click') {
-        const el = document.querySelector(m.selector as string) as HTMLElement | null;
+        // `index` picks the n-th match (default the first).
+        const el = document.querySelectorAll(m.selector as string)[Number(m.index ?? 0)] as HTMLElement | undefined;
         if (el) {
           el.click();
         }
@@ -4450,6 +4451,18 @@ function installTestHook(): void {
         // one type — lets a test assert what a click asked the host to do.
         const type = m.type as string | undefined;
         reply({ messages: postedForTest.filter((x) => !type || x.type === type) });
+      } else if (m.__test__ === 'addImage') {
+        // Attach an image through the same path a paste or drop takes.
+        void fetch(String(m.dataUrl))
+          .then((r) => r.blob())
+          .then((blob) => addImage(new File([blob], String(m.name ?? 'image.png'), { type: blob.type })))
+          .then(() => reply({ ok: true, pending: state.pendingImages.length }));
+        return;
+      } else if (m.__test__ === 'postToHost') {
+        // Send a message exactly as one of the webview's own controls would
+        // (selectModel, selectAgent, ...) — for picks whose rows carry no id.
+        post(m.message as WebviewToHost);
+        reply({ ok: true });
       } else if (m.__test__ === 'keydown') {
         // A real key event on an element (default: the composer), so tests can
         // exercise shortcuts like Alt+Enter the way a user presses them.
