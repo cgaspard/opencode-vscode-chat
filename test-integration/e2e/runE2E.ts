@@ -29,6 +29,7 @@ async function main(): Promise<void> {
       launchArgs: [workspace, '--disable-extensions', `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'oc-e2e-profile-'))}`],
       extensionTestsEnv: {
         E2E_WORKSPACE: workspace,
+        OPENCODE_CHAT_LOG_STDOUT: '1',
         ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('E2E_')) as Array<[string, string]>),
       },
     });
