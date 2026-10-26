@@ -50,7 +50,7 @@ import { detectFlavor, type LocalModel } from '../local/client';
 import { syncEndpointsFromRegistry, type LocalEndpoints } from '../local/endpoints';
 import { log, logError } from '../logger';
 import { discoverMcpServers } from '../mcp/discovery';
-import { OpencodeClient } from '../opencode/client';
+import { OpencodeV2Client } from '../opencode/v2client';
 import { OpencodeAgent, OpencodeEvent, PromptBody } from '../opencode/protocol';
 import { Disposable, OpencodeServerManager } from '../opencode/serverManager';
 import type { ProviderCatalog } from '../providers/catalog';
@@ -60,6 +60,7 @@ import {
   UiAgent,
   UiCommand,
   UiGoal,
+  UiDelivery,
   UiImage,
   UiMcpServer,
   UiModel,
@@ -114,7 +115,7 @@ export interface BridgeDeps {
  * Owns the conversation state for that webview and relays the SSE event stream.
  */
 export class ChatBridge {
-  private client: OpencodeClient | undefined;
+  private client: OpencodeV2Client | undefined;
   private currentSessionID: string | null = null;
   private currentModel: string | null = null;
   private agent: string;
@@ -123,7 +124,7 @@ export class ChatBridge {
   private eventAbort: AbortController | undefined;
   /** The client the live event stream is bound to, so a respawned server (new
    * port) can be detected and re-subscribed. */
-  private streamingClient: OpencodeClient | undefined;
+  private streamingClient: OpencodeV2Client | undefined;
   private disposed = false;
   private connected = false;
   private connecting = false;
@@ -579,7 +580,18 @@ export class ChatBridge {
             msg.images ?? [],
             msg.includeActiveFile ?? false,
             msg.includeSelection ?? false,
+            msg.delivery ?? 'steer',
           );
+          break;
+        case 'inboxSetDelivery':
+          if (this.currentSessionID) {
+            await this.client?.setDelivery(this.currentSessionID, msg.inboxID, msg.delivery);
+          }
+          break;
+        case 'inboxCancel':
+          if (this.currentSessionID) {
+            await this.client?.cancelPending(this.currentSessionID, msg.inboxID);
+          }
           break;
         case 'selectModel':
           // msg.modelID is a provider-qualified ref ("anthropic/claude-sonnet-4-6"),
@@ -1800,7 +1812,7 @@ export class ChatBridge {
     if (!this.client) {
       return [];
     }
-    let providers: Awaited<ReturnType<OpencodeClient['listProviders']>>;
+    let providers: Awaited<ReturnType<OpencodeV2Client['listProviders']>>;
     try {
       providers = await this.client.listProviders();
     } catch (err) {
@@ -2127,6 +2139,7 @@ export class ChatBridge {
       const title = match.title || 'Chat';
       this.updateTitle(title);
       this.post({ type: 'sessionLoaded', sessionID: stored, title, messages });
+      this.postInbox();
     } catch (err) {
       // Restore is best-effort — fall back to the normal fresh-chat path.
       logError('restore last session', err);
@@ -2148,6 +2161,7 @@ export class ChatBridge {
     const title = sessions.find((s) => s.id === sessionID)?.title ?? 'Chat';
     this.updateTitle(title);
     this.post({ type: 'sessionLoaded', sessionID, title, messages });
+    this.postInbox();
   }
 
   private async handleSend(
@@ -2156,6 +2170,7 @@ export class ChatBridge {
     images: UiImage[],
     includeActiveFile: boolean,
     includeSelection: boolean,
+    delivery: UiDelivery = 'steer',
   ): Promise<void> {
     if (!this.client) {
       throw new Error('OpenCode server is not running.');
@@ -2254,6 +2269,7 @@ export class ChatBridge {
       ...(system ? { system } : {}),
       ...(variant ? { variant } : {}),
       parts,
+      delivery,
     });
 
     // Auto-name the session from the first user prompt.
@@ -2276,7 +2292,7 @@ export class ChatBridge {
    * the OpenCode server is unreachable, reconnect (respawning it if it died)
    * and retry once before surfacing a friendly error.
    */
-  private async sendPrompt(body: PromptBody): Promise<void> {
+  private async sendPrompt(body: PromptBody & { delivery?: UiDelivery }): Promise<void> {
     try {
       await this.client!.promptAsync(this.currentSessionID!, body);
     } catch (err) {
@@ -2320,6 +2336,16 @@ export class ChatBridge {
       void this.onTurnIdle();
     }
     this.post({ type: 'event', event });
+  }
+
+  /** Send the current session's pending (not yet delivered) messages to the webview. */
+  private postInbox(): void {
+    const sid = this.currentSessionID;
+    const items = sid && this.client ? this.client.pendingInbox(sid) : [];
+    this.post({
+      type: 'inbox',
+      items: items.map(({ inboxID, text, delivery, files }) => ({ inboxID, text, delivery, files })),
+    });
   }
 
   private async openFile(p: string): Promise<void> {

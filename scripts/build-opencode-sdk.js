@@ -73,6 +73,30 @@ const patches = {
         .replace(/process\.env\.(XDG_[A-Z_]+)/g, '(__xdg.$1 ?? process.env.$1)');
       return { contents: out, loader: 'js' };
     });
+
+    // Chat history from 1.x: @opencode/core resolves `#v1-migration` to a no-op
+    // on Node (the real migrator is published for Bun only) and the no-op
+    // reports "completed". Sessions 1.x had not already mirrored into the v2
+    // tables would silently vanish on upgrade. Use the real migrator; its only
+    // Bun dependencies are bun:sqlite (mapped to a node:sqlite adapter) and one
+    // hash call (below).
+    build.onResolve({ filter: /^#v1-migration$/ }, () => ({
+      path: path.join(ROOT, 'node_modules', '@opencode', 'core', 'dist', 'database', 'v1-migration.bun.js'),
+    }));
+    build.onResolve({ filter: /^bun:sqlite$/ }, () => ({
+      path: path.join(ROOT, 'scripts', 'opencode-sdk', 'bun-sqlite.mjs'),
+    }));
+    build.onLoad({ filter: /@opencode[\\/]core[\\/]dist[\\/]database[\\/]v1-migration\.bun\.js$/ }, async (args) => {
+      const src = await fs.promises.readFile(args.path, 'utf8');
+      const bunHash = /new Bun\.CryptoHasher\("sha256"\)\.update\(/g;
+      if ((src.match(bunHash) ?? []).length !== 1 || /\bBun\.(?!CryptoHasher)/.test(src)) {
+        throw new Error('v1-migration.bun.js uses Bun APIs the patch does not cover; update the migration patch');
+      }
+      const out =
+        'import { createHash as __ocCreateHash } from "node:crypto";\n' +
+        src.replace(bunHash, '__ocCreateHash("sha256").update(');
+      return { contents: out, loader: 'js' };
+    });
   },
 };
 
@@ -120,7 +144,7 @@ async function main() {
       // CommonJS deps inside the ESM bundle still call require().
       banner: { js: "import { createRequire as __ocCreateRequire } from 'node:module'; const require = __ocCreateRequire(import.meta.url);" },
       plugins: [patches],
-      external: [...NATIVE.flatMap((p) => [p, `${p}/*`, `${p}-*`]), ...OPTIONAL, 'bun:*', '*.node'],
+      external: [...NATIVE.flatMap((p) => [p, `${p}/*`, `${p}-*`]), ...OPTIONAL, '*.node'],
     });
   } finally {
     fs.rmSync(entry, { force: true });

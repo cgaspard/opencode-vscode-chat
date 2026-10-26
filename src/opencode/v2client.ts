@@ -146,9 +146,20 @@ export class OpencodeV2Client {
     return v1Session(s);
   }
 
+  /** This workspace's top-level sessions, newest first. */
   async listSessions(): Promise<Session[]> {
-    const res = await this.host.session.list(this.location);
-    return ((res?.data ?? res ?? []) as any[]).filter((s) => !s.parentID).map(v1Session);
+    // Sessions filter on `directory`; a request location does not scope them.
+    const rows: any[] = [];
+    let res = await this.host.session.list({ directory: this.directory, limit: 200 });
+    for (let page = 0; page < 50; page++) {
+      rows.push(...((res?.data ?? []) as any[]));
+      const next: string | undefined = res?.cursor?.next;
+      if (!next || !(res?.data ?? []).length) {
+        break;
+      }
+      res = await this.host.session.list({ cursor: next, limit: 200 });
+    }
+    return rows.filter((s) => !s.parentID).map(v1Session);
   }
 
   async getMessages(sessionID: string): Promise<MessageWithParts[]> {

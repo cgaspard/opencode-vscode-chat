@@ -4,6 +4,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { rearmLegacyMigration } from '../core/legacy';
+import { log, logError } from '../logger';
 
 /**
  * The per-extension symbol sdk.mjs reads its global roots from (patched in at
@@ -54,6 +56,33 @@ function loadSdk(extensionPath: string, paths: EmbeddedPaths): Promise<SdkModule
   return loaded;
 }
 
+/**
+ * Re-arm OpenCode 2's 1.x migration when 1.x wrote sessions it has not seen
+ * (see src/core/legacy.ts). Runs before the engine opens the file. Best effort:
+ * a failure here costs history, never the panel.
+ */
+function resyncLegacyHistory(dbPath: string): void {
+  if (!fs.existsSync(dbPath)) {
+    return;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec('PRAGMA busy_timeout = 5000');
+      const outcome = rearmLegacyMigration(db);
+      if (outcome === 'rearmed') {
+        log('1.x sessions changed since the last sync; OpenCode will re-import them');
+      }
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    logError('could not check 1.x session history', err);
+  }
+}
+
 function rootsFor(paths: EmbeddedPaths): Record<string, string> {
   return {
     data: path.join(paths.root, 'data'),
@@ -84,9 +113,14 @@ export async function createHost(
   for (const dir of Object.values(roots)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+  // The same file the 1.x server used (it ran with XDG_DATA_HOME=<root>/data).
+  // OpenCode 2 migrates 1.x sessions found in it, so chat history survives the
+  // upgrade; a fresh path would silently start everyone from empty.
+  const dbPath = path.join(roots.data, 'opencode', 'opencode.db');
+  resyncLegacyHistory(dbPath);
   return sdk.OpenCode.create({
     app: { name: 'opencode-vscode-chat' },
-    database: { path: path.join(paths.root, 'opencode.db') },
+    database: { path: dbPath },
     config: {
       content: configContent,
       directory: path.join(roots.config, 'opencode'),

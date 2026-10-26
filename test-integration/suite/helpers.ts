@@ -61,6 +61,16 @@ export async function click(selector: string): Promise<boolean> {
   return (await exec({ __test__: 'click', selector })).ok;
 }
 
+/** Messages the webview posted to the host, newest last (optionally of one type). */
+export async function posted(type?: string): Promise<Array<Record<string, unknown>>> {
+  return (await exec({ __test__: 'posted', ...(type ? { type } : {}) })).messages;
+}
+
+/** Press a key on the composer (or `selector`), e.g. Enter with altKey to queue. */
+export async function keydown(key: string, mods: { altKey?: boolean; shiftKey?: boolean; selector?: string } = {}): Promise<boolean> {
+  return (await exec({ __test__: 'keydown', key, ...mods })).ok;
+}
+
 /** Set the composer input value and fire its input event (drives autocomplete). */
 export async function setInput(value: string): Promise<void> {
   await exec({ __test__: 'setInput', value });
