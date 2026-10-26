@@ -3,6 +3,22 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.15.0
+
+_Released 2026-10-25_
+
+### Highlights
+- The panel no longer fails with "OpenCode server failed to start" once OpenCode 2 is installed on your machine (Homebrew now ships it). The extension always runs the OpenCode build bundled with it.
+- Bundled OpenCode moves from 1.18.26 to 1.19.4.
+
+### Changed
+- The bundled OpenCode server moves from 1.18.26 to 1.19.4. Most relevant here - slow local model startups get a five-minute header and stream timeout instead of failing early, Gemini and Anthropic thinking defaults are corrected, and the bundled Bun runtime picks up TLS, HTTP and fetch security fixes.
+
+### Fixed
+- Upgrading OpenCode elsewhere could break the panel. An `opencode` on your PATH, in Homebrew, or in `~/.opencode/bin` was preferred over the bundled binary regardless of version, and OpenCode 2 replaced the server API this extension speaks — its server starts, then answers every request the panel makes with a web page, so the health check never passed. The bundled binary is now always used unless you set `opencodeChat.opencodePath` yourself, and if that override points at OpenCode 2 the log says so instead of only reporting a failed health check.
+- A server that started but never became healthy was left running, and the panel retried every 30 seconds — so a broken binary accumulated one orphaned `opencode serve` process per retry. A failed start now stops the process it spawned.
+- Changing `opencodeChat.opencodePath` now applies on the next server start instead of needing a window reload.
+
 ## v0.14.2
 
 _Released 2026-09-06_

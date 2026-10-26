@@ -102,7 +102,7 @@ The panel lives in the Activity Bar (or the secondary side bar). The composer ke
   - a **local server** speaking the OpenAI-compatible API — [LM Studio](https://lmstudio.ai) (default `http://127.0.0.1:1234`), [Ollama](https://ollama.com) (`11434`), [vLLM](https://docs.vllm.ai) (`8000`), [llama.cpp](https://github.com/ggml-org/llama.cpp) (`8080`, added by URL), oMLX, or anything else
 - *(LM Studio only, recommended)* the **`lms` CLI** as a fallback for automatic context-window management
 
-> **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`; an install on your `PATH` or in `~/.opencode/bin` is preferred over the bundled copy if present.
+> **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`. An OpenCode install elsewhere on your machine is never picked up automatically — the panel always runs the version it was tested with (OpenCode 2 is not supported yet).
 >
 > OpenCode is MIT-licensed by [sst/opencode](https://github.com/sst/opencode) and is redistributed here unmodified; its notice ships alongside the binary as `bin/LICENSE.opencode`. This extension is an independent project and is not affiliated with or endorsed by the OpenCode maintainers.
 
@@ -119,7 +119,7 @@ any time with **Switch to Release Version**.
 | Setting | Default | Description |
 | --- | --- | --- |
 | `opencodeChat.autoDetectLocalServers` | `true` | Offer local servers found on the well-known ports on first run |
-| `opencodeChat.opencodePath` | _(bundled)_ | Override path to an `opencode` binary; empty uses your own install (PATH / `~/.opencode`) or the bundled one |
+| `opencodeChat.opencodePath` | _(bundled)_ | Override path to an `opencode` 1.x binary; empty uses the bundled one |
 | `opencodeChat.serverPort` | `0` | Embedded server port (0 = auto) |
 | `opencodeChat.defaultModel` | _(first)_ | Default model as `provider/model`, e.g. `anthropic/claude-sonnet-4-6` |
 | `opencodeChat.agent` | `build` | `build` or `plan` |
