@@ -6,8 +6,9 @@ import * as vscode from 'vscode';
 import * as h from '../suite/helpers';
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:1234/v1';
-export const MODEL = process.env.E2E_MODEL ?? 'qwen3-vl-30b-a3b-instruct-mlx';
-export const REASONING_MODEL = process.env.E2E_REASONING_MODEL ?? 'qwen/qwen3.8-27b';
+export const MODEL = process.env.E2E_MODEL ?? 'qwen/qwen3-vl-4b';
+// One small model for everything (the user's LM Studio is shared; keep loads down).
+export const REASONING_MODEL = process.env.E2E_REASONING_MODEL ?? MODEL;
 export const WORKSPACE = process.env.E2E_WORKSPACE ?? '';
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

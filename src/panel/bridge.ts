@@ -217,7 +217,12 @@ export class ChatBridge {
     );
     // Closing a tab is the one way context goes stale silently — see
     // pruneClosedContext.
-    this.tabsSub = vscode.window.tabGroups.onDidChangeTabs(() => this.pruneClosedContext());
+    this.tabsSub = vscode.Disposable.from(
+      vscode.window.tabGroups.onDidChangeTabs(() => this.pruneClosedContext()),
+      // A tab-change event can arrive while the closing editor is still listed
+      // as visible; the visible-editors change that follows settles it.
+      vscode.window.onDidChangeVisibleTextEditors(() => this.pruneClosedContext()),
+    );
     // Self-heal when the shared OpenCode server dies unexpectedly.
     this.serverExitSub = this.deps.server.addExitListener(() => this.onServerExit());
   }
@@ -2038,8 +2043,11 @@ export class ChatBridge {
     let summary = '';
     try {
       const sel = this.modelSelection();
-      await this.client.summarize(sessionID, sel!.providerID, sel!.modelID);
-      summary = (await this.compactionState(sessionID)).summary;
+      summary = await this.client.summarize(sessionID, sel!.providerID, sel!.modelID);
+      if (!summary) {
+        summary = (await this.compactionState(sessionID)).summary;
+      }
+      log(`compaction finished (${summary.length} chars of summary)`);
     } catch (err) {
       // The request is only the trigger. OpenCode runs the summarization to
       // completion even when our connection drops, so a thrown request does not
