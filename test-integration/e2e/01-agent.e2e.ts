@@ -1,7 +1,8 @@
 // The agent: real tools with cards, edits with diffs, todos, plan mode,
 // streaming markdown, reasoning blocks, the context meter and tok/s.
 import * as assert from 'node:assert';
-import { assistantText, ask, freshChat, h, read, REASONING_MODEL, until } from './lib';
+import { FakeThinker, THINKER_MODEL } from './fakeThinker';
+import { ask, BASE_URL, freshChat, h, read, until, useServer } from './lib';
 
 describe('e2e · the agent', function () {
   it('reloads a model loaded with too small a window before prompting (LM Studio)', async () => {
@@ -64,10 +65,21 @@ describe('e2e · the agent', function () {
   });
 
   it('a reasoning model shows its thinking in a collapsible block', async () => {
-    await freshChat({ model: REASONING_MODEL });
-    await ask('What is 17 * 23? Think it through, then answer with just the number.', 600_000);
-    assert.match(await assistantText(), /391/);
-    assert.ok((await h.count('.part-reasoning')) > 0, 'a thinking block rendered');
+    // A scripted model that streams reasoning_content before its answer: proves
+    // the whole thinking path without loading a large reasoning model.
+    const fake = new FakeThinker();
+    await fake.start();
+    try {
+      await useServer(fake.url);
+      await freshChat({ model: THINKER_MODEL });
+      const reply = await ask('What is 17 * 23?');
+      assert.match(reply, /391/);
+      await until(async () => (await h.count('.part-reasoning')) > 0, 10_000, 'the thinking block');
+      assert.match(String(await h.text('.part-reasoning')), /17 times 20/, 'the reasoning text streamed into the block');
+    } finally {
+      await useServer(BASE_URL);
+      await fake.stop();
+    }
   });
 
   it('reports generation speed and fills the context meter', async () => {

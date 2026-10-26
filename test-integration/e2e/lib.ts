@@ -31,6 +31,13 @@ let providerID = '';
 /** `<provider>/<model>` as the panel refers to a model of the e2e server. */
 export const ref = (model: string) => `${providerID}/${model}`;
 
+/** Make `url` the panel's only model server (e.g. a scripted fake), and back. */
+export async function useServer(url: string): Promise<void> {
+  const added = (await vscode.commands.executeCommand('opencodeChat._test.useServer', url)) as { providerID: string };
+  providerID = added.providerID;
+  await sleep(1500); // let the bridge pick up the new provider
+}
+
 /** Point the extension at the model server and open a ready panel. Once per run. */
 let connected = false;
 export async function connect(): Promise<void> {
