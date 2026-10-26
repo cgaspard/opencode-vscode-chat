@@ -539,7 +539,8 @@ export interface SelectableRef {
  * `pickModel` to provider-qualified references.
  *
  * A preference matches provider+model when it carries a provider, or any
- * provider's copy of that model id when it does not. Falls back to a loaded
+ * provider's copy of that model id when it does not (or when what looked like
+ * a provider is part of a slashed model id, as LM Studio's ids are). Falls back to a loaded
  * local model (starting one that is already in memory beats cold-loading
  * another), then to the first model available. Undefined only when there are no
  * models at all.
@@ -553,11 +554,16 @@ export function pickModelRef(
     if (!parsed) {
       continue;
     }
-    const hit = models.find(
-      (m) =>
-        m.modelID === parsed.modelID &&
-        (parsed.providerID === undefined || m.providerID === parsed.providerID),
-    );
+    const hit =
+      models.find(
+        (m) =>
+          m.modelID === parsed.modelID &&
+          (parsed.providerID === undefined || m.providerID === parsed.providerID),
+      ) ??
+      // A local model id often has a slash of its own (LM Studio's
+      // "qwen/qwen3-vl-4b"): when the part before it is no provider of that
+      // model, the whole preference may be the bare model id.
+      (parsed.providerID !== undefined ? models.find((m) => m.modelID === pref) : undefined);
     if (hit) {
       return { providerID: hit.providerID, modelID: hit.modelID };
     }

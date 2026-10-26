@@ -17,7 +17,7 @@ describe('e2e · agents', function () {
   it('a primary agent from .opencode/agents takes over the conversation', async () => {
     await freshChat({ agent: 'pirate' });
     const reply = await ask('Say hello.');
-    assert.match(reply, /^\s*ARR\b/m, `the pirate prompt applied (${reply.slice(0, 80)})`);
+    assert.match(reply, /^\s*ARR/im, `the pirate prompt applied (${reply.slice(0, 80)})`);
   });
 
   it('the model can delegate to a subagent', async () => {

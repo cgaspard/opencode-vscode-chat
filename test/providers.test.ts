@@ -246,6 +246,17 @@ test('an unqualified preference matches under whichever provider has it', () => 
   });
 });
 
+test('a bare model id with a slash of its own matches under whichever provider has it', () => {
+  // LM Studio ids are "publisher/model": "qwen/qwen3-vl-4b" is no provider "qwen".
+  const models = [
+    { providerID: 'lm-studio', modelID: 'prism-ml/bonsai-27b', loaded: true },
+    { providerID: 'lm-studio', modelID: 'qwen/qwen3-vl-4b', loaded: true },
+  ];
+  assert.deepEqual(pickModelRef(['qwen/qwen3-vl-4b'], models), { providerID: 'lm-studio', modelID: 'qwen/qwen3-vl-4b' });
+  // A real provider prefix still wins.
+  assert.deepEqual(pickModelRef(['lm-studio/qwen/qwen3-vl-4b'], models), { providerID: 'lm-studio', modelID: 'qwen/qwen3-vl-4b' });
+});
+
 test('preferences are tried in order and blanks are skipped', () => {
   assert.deepEqual(pickModelRef([null, '', 'nope/gone', 'lm-studio/qwen3-coder-30b'], MODELS), {
     providerID: 'lm-studio',
