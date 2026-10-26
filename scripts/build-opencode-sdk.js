@@ -10,6 +10,7 @@
 //   opencode-sdk/sdk.mjs          @opencode/sdk and its JS dependency graph, one ESM file
 //   opencode-sdk/node_modules/    the native modules it loads at runtime, for <target>
 //   opencode-sdk/version          pinned SDK version + target, for provenance
+//   opencode-sdk/LICENSE.opencode the MIT notice for the bundled OpenCode code
 //
 // Why one ESM file rather than folding it into dist/extension.js: the SDK is
 // ESM-only and leans on import.meta (url, resolve) in ~30 places, which a
@@ -37,12 +38,15 @@ const NATIVE = ['@parcel/watcher', '@lydell/node-pty', 'web-tree-sitter', 'tree-
 // Optional accelerators the SDK falls back without (try/catch around the import).
 const OPTIONAL = ['@ff-labs/fff-node', 'bufferutil', 'utf-8-validate', 'supports-color'];
 
-// vsce target -> npm --os/--cpu, so the native packages match the VSIX platform.
+// vsce target -> npm --os/--cpu(/--libc), so the native packages match the VSIX
+// platform. Linux needs a libc: @parcel/watcher publishes glibc and musl builds
+// separately and npm installs neither without one. VS Code's Linux builds are
+// glibc.
 const TARGETS = {
   'darwin-arm64': ['darwin', 'arm64'],
   'darwin-x64': ['darwin', 'x64'],
-  'linux-x64': ['linux', 'x64'],
-  'linux-arm64': ['linux', 'arm64'],
+  'linux-x64': ['linux', 'x64', 'glibc'],
+  'linux-arm64': ['linux', 'arm64', 'glibc'],
   'win32-x64': ['win32', 'x64'],
   'win32-arm64': ['win32', 'arm64'],
 };
@@ -154,10 +158,39 @@ async function main() {
   // platform, into opencode-sdk/node_modules (resolved relative to sdk.mjs).
   const specs = NATIVE.map((p) => `${p}@${installedVersion(p)}`);
   fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify({ name: 'opencode-sdk-runtime', private: true }, null, 2));
-  run('npm', ['install', ...specs, '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock', `--os=${platform[0]}`, `--cpu=${platform[1]}`], { cwd: OUT });
+  run(
+    'npm',
+    [
+      'install',
+      ...specs,
+      '--omit=dev',
+      '--no-audit',
+      '--no-fund',
+      '--no-package-lock',
+      `--os=${platform[0]}`,
+      `--cpu=${platform[1]}`,
+      ...(platform[2] ? [`--libc=${platform[2]}`] : []),
+    ],
+    { cwd: OUT },
+  );
+  // Fail the build rather than ship a VSIX whose engine cannot start on <target>.
+  for (const [pkg, dir] of [
+    ['@parcel/watcher', `@parcel/watcher-${platform[0]}-${platform[1]}${platform[2] ? `-${platform[2]}` : ''}`],
+    ['@lydell/node-pty', `@lydell/node-pty-${platform[0]}-${platform[1]}`],
+  ]) {
+    if (!fs.existsSync(path.join(OUT, 'node_modules', dir))) {
+      throw new Error(`${pkg}: no native package for ${target} (expected node_modules/${dir})`);
+    }
+  }
   fs.rmSync(path.join(OUT, 'package.json'), { force: true });
 
   fs.writeFileSync(path.join(OUT, 'version'), `${sdkVersion}\n${target}\n`);
+  // MIT requires the notice to travel with the OpenCode code bundled into
+  // sdk.mjs. Keep scripts/LICENSE.opencode in step if upstream changes terms.
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'LICENSE.opencode'), path.join(OUT, 'LICENSE.opencode'));
+  // npm bookkeeping the runtime never reads.
+  fs.rmSync(path.join(OUT, 'node_modules', '.bin'), { recursive: true, force: true });
+  fs.rmSync(path.join(OUT, 'node_modules', '.package-lock.json'), { force: true });
   const mb = (p) => (fs.statSync(p).size / 1e6).toFixed(1);
   console.log(`[build-opencode-sdk] wrote opencode-sdk/sdk.mjs (${mb(path.join(OUT, 'sdk.mjs'))} MB) + ${NATIVE.length} native packages`);
 }

@@ -5,8 +5,7 @@ import * as vscode from 'vscode';
 import { ExtensionConfig, getConfig } from '../config';
 import { declaredContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
-import { withHostXdg } from '../core/hostenv';
-import { augmentedPath } from '../core/mcp';
+import { augmentedPath, withLocalEnvironment } from '../core/mcp';
 import { opencodePermission } from '../core/permission';
 import type { ProviderConnection } from '../core/providers';
 import type { LocalEndpoints } from '../local/endpoints';
@@ -220,7 +219,7 @@ export class OpencodeServerManager {
       // was launched from a GUI context its PATH can be minimal (the #1 reason
       // npx/uvx-based servers fail to start), so add the usual install
       // locations; existing entries stay first so the user's toolchain wins.
-      mcp = withHostXdg(discoverMcpServers().map, {
+      mcp = withLocalEnvironment(discoverMcpServers().map, {
         PATH: augmentedPath(process.env.PATH, os.homedir(), path.delimiter),
       });
     } catch (err) {

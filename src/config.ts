@@ -14,8 +14,6 @@ function normalizeEffort(value: unknown): EffortLevel {
 }
 
 export interface ExtensionConfig {
-  opencodePath: string;
-  serverPort: number;
   /** Default model as a `provider/model` reference (a bare model id also matches). */
   defaultModel: string;
   /** Default agent name. Free-form: user-defined agents are discovered at runtime. */
@@ -37,8 +35,6 @@ export interface ExtensionConfig {
 export function getConfig(): ExtensionConfig {
   const cfg = vscode.workspace.getConfiguration('opencodeChat');
   return {
-    opencodePath: (cfg.get<string>('opencodePath') ?? '').trim(),
-    serverPort: cfg.get<number>('serverPort') ?? 0,
     defaultModel: (cfg.get<string>('defaultModel') ?? '').trim(),
     agent: (cfg.get<string>('agent') ?? 'build').trim() || 'build',
     autoDetectLocalServers: cfg.get<boolean>('autoDetectLocalServers') ?? true,

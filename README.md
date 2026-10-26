@@ -46,7 +46,9 @@ Powered by the open-source [**OpenCode**](https://opencode.ai) agent, bundled ri
 
 ## Steer it mid-flight
 
-Type while the agent is working and hit Enter — your instructions get injected at its next step, so it adjusts work already in progress instead of you stopping and starting over. The stop button still stops.
+Type while the agent is working and hit **Enter** — your message is handed to it at its next step, so it adjusts work already in progress instead of you stopping and starting over. Hit **⌥/Alt+Enter** instead to **queue** it for when the current turn finishes.
+
+Messages waiting to be picked up sit above the composer, marked *Steering* or *Queued*: switch one between the two, or cancel it before the agent ever sees it. Each lands in the conversation at the moment the agent actually reads it, so the transcript stays in the order the model saw things. The stop button still stops.
 
 ## Your models, your keys
 
@@ -102,9 +104,9 @@ The panel lives in the Activity Bar (or the secondary side bar). The composer ke
   - a **local server** speaking the OpenAI-compatible API — [LM Studio](https://lmstudio.ai) (default `http://127.0.0.1:1234`), [Ollama](https://ollama.com) (`11434`), [vLLM](https://docs.vllm.ai) (`8000`), [llama.cpp](https://github.com/ggml-org/llama.cpp) (`8080`, added by URL), oMLX, or anything else
 - *(LM Studio only, recommended)* the **`lms` CLI** as a fallback for automatic context-window management
 
-> **[OpenCode](https://opencode.ai) is bundled** — the matching platform binary ships inside the extension, so there's nothing extra to install and it works offline. Power users can point at their own build with `opencodeChat.opencodePath`. An OpenCode install elsewhere on your machine is never picked up automatically — the panel always runs the version it was tested with (OpenCode 2 is not supported yet).
+> **[OpenCode](https://opencode.ai) 2 runs inside the extension** — there is no separate server to install, start or stop, no port, and nothing left running when VS Code closes. It works offline. An OpenCode install elsewhere on your machine (yours, Homebrew's) is never used and never affected: the panel keeps its own sessions and settings.
 >
-> OpenCode is MIT-licensed by [sst/opencode](https://github.com/sst/opencode) and is redistributed here unmodified; its notice ships alongside the binary as `bin/LICENSE.opencode`. This extension is an independent project and is not affiliated with or endorsed by the OpenCode maintainers.
+> OpenCode is MIT-licensed by [anomalyco/opencode](https://github.com/anomalyco/opencode); its notice ships with the extension as `opencode-sdk/LICENSE.opencode`. This extension is an independent project and is not affiliated with or endorsed by the OpenCode maintainers.
 
 ### Beta channel
 
@@ -119,8 +121,6 @@ any time with **Switch to Release Version**.
 | Setting | Default | Description |
 | --- | --- | --- |
 | `opencodeChat.autoDetectLocalServers` | `true` | Offer local servers found on the well-known ports on first run |
-| `opencodeChat.opencodePath` | _(bundled)_ | Override path to an `opencode` 1.x binary; empty uses the bundled one |
-| `opencodeChat.serverPort` | `0` | Embedded server port (0 = auto) |
 | `opencodeChat.defaultModel` | _(first)_ | Default model as `provider/model`, e.g. `anthropic/claude-sonnet-4-6` |
 | `opencodeChat.agent` | `build` | `build` or `plan` |
 | `opencodeChat.autoEnsureContext` | `true` | *(LM Studio only)* Reload the model with an adequate context window before prompting |
@@ -222,18 +222,21 @@ Each row shows the transport (local/remote) and the command or URL it was config
 VS Code webview (chat UI)
         │  postMessage
         ▼
-Extension host (bridge)          providers + keys (Secret Storage)
-        │  HTTP + SSE  (raw fetch)
+Extension host ─ bridge          providers + keys (Secret Storage)
+        │  in-process calls + event stream
         ▼
-opencode serve  ──┬── Anthropic / OpenAI / Google / OpenRouter / …
-  (headless,      ├── LM Studio · Ollama · vLLM   (OpenAI /v1, local)
-   config         └── OpenCode Zen                (built in, no key)
-   injected)
+OpenCode 2 (@opencode/sdk,  ──┬── Anthropic / OpenAI / Google / OpenRouter / …
+  embedded, no server)        ├── LM Studio · Ollama · vLLM   (OpenAI /v1, local)
+                              └── OpenCode Zen                (built in, no key)
 ```
 
-Every provider you enable is injected into OpenCode at launch via the
-`OPENCODE_CONFIG_CONTENT` environment variable — **nothing is written to your
-workspace or global config.**
+OpenCode runs inside the extension host through its embedding SDK — no
+process, no port, no password. Every provider you enable is handed to it in
+memory when it starts — **nothing is written to your workspace or global
+config**, and only the providers you configured here are enabled (a key
+exported in your shell is never picked up behind your back). Its sessions,
+database and settings live in the extension's own storage, isolated from any
+OpenCode you run yourself; chats from earlier versions carry over.
 
 - **Cloud providers** need only their `apiKey`; the model list, limits, prices
   and reasoning variants come from OpenCode's own catalog, which is why 170+
@@ -241,25 +244,28 @@ workspace or global config.**
 - **Local servers** are declared as `@ai-sdk/openai-compatible` providers with
   their models enumerated from the server itself, since no catalog knows what
   you are running on your own machine.
-- **API keys never touch the environment.** `OPENCODE_CONFIG_CONTENT` is process
-  environment, and stdio MCP servers inherit it — so each key is written to its
-  own `0600` file and referenced with OpenCode's `{file:…}` placeholder, which
-  the server resolves at load. Removing a provider deletes its file.
+- **API keys never sit in the config text.** Each key is written to its own
+  `0600` file and referenced with OpenCode's `{file:…}` placeholder, which the
+  engine resolves at load. Removing a provider deletes its file.
 
 ## Develop from source
 
 ```bash
 npm install
-npm run bundle:opencode      # fetch the pinned OpenCode binary into bin/ for your platform
+npm run bundle:opencode-sdk  # build the embedded OpenCode engine into opencode-sdk/ for your platform
 npm run compile              # type-check + bundle (extension + webview)
 # then press F5 in VS Code to launch the Extension Development Host
-npm run package:vsix:bundled # build a platform .vsix with the binary embedded
+npm test                     # unit tests
+npm run test:integration     # drives the real webview in a VS Code instance
+npm run test:live            # the engine against a local model (LM Studio on :1234)
+npm run package:vsix:bundled # build a platform .vsix with the engine embedded
 ```
 
-The OpenCode binary is fetched at build time (pinned by `opencodeVersion` in
-`package.json`) and is never committed — `bin/` is git-ignored. Bump that field
-to upgrade the bundled OpenCode. F5 also resolves the binary from `bin/`, so run
-`bundle:opencode` once before launching the dev host.
+The engine is built from `@opencode/sdk`, pinned to an exact version in
+`devDependencies` — its API is still marked experimental, so upgrades are
+deliberate. `opencode-sdk/` is generated and git-ignored; run
+`bundle:opencode-sdk` once before launching the dev host, and again after
+changing the pinned version.
 
 ## License
 

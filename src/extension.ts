@@ -98,15 +98,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (
-        e.affectsConfiguration('opencodeChat.opencodePath') ||
-        e.affectsConfiguration('opencodeChat.serverPort') ||
-        // MCP servers are baked into the injected config at spawn time, so a
-        // change to ours — or VS Code's shared `mcp` setting — needs a respawn
+        // MCP servers are baked into the engine's config when it starts, so a
+        // change to ours — or VS Code's shared `mcp` setting — needs a restart
         // to take effect. (On-disk .mcp.json / .vscode/mcp.json edits are picked
         // up by the "Restart OpenCode Server" command.)
         e.affectsConfiguration('opencodeChat.mcpServers') ||
         e.affectsConfiguration('mcp') ||
-        // The permission ruleset is baked into the injected config at spawn.
+        // The permission ruleset is baked into the engine's config at start.
         e.affectsConfiguration('opencodeChat.permissionMode')
       ) {
         log('relevant configuration changed; restarting server on next use');
