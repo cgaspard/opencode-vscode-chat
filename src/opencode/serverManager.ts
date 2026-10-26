@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { ExtensionConfig, getConfig } from '../config';
 import { declaredContext } from '../core/context';
 import { variantsForModel } from '../core/effort';
-import { augmentedPath, withLocalEnvironment } from '../core/mcp';
+import { augmentedPath, toEngineMcp, withLocalEnvironment } from '../core/mcp';
 import { opencodePermission } from '../core/permission';
 import { toEngineProviderID } from '../core/providerIds';
 import type { ProviderConnection } from '../core/providers';
@@ -258,7 +258,8 @@ export class OpencodeServerManager {
       // list renders from it.
       experimental: { todo: true },
       ...(Object.keys(provider).length ? { provider } : {}),
-      ...(Object.keys(mcp).length ? { mcp } : {}),
+      // Native shape, with Code Mode off (see toEngineMcp).
+      ...(Object.keys(mcp).length ? { mcp: toEngineMcp(mcp) } : {}),
     };
     return JSON.stringify(config);
   }

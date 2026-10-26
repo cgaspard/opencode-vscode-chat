@@ -3,14 +3,18 @@
 import * as assert from 'node:assert';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { ask, freshChat, h, until, ws } from './lib';
+import { ask, freshChat, h, turn, until, ws } from './lib';
 
 /** Open a file beside the panel (as a user would) and select one line. */
-async function openAndSelect(rel: string, line: number): Promise<void> {
+async function openAndSelect(rel: string, line: number | null): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(ws(rel)));
   const editor = await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: false, viewColumn: vscode.ViewColumn.Beside });
-  const l = doc.lineAt(line);
-  editor.selection = new vscode.Selection(l.range.start, l.range.end);
+  if (line === null) {
+    editor.selection = new vscode.Selection(0, 0, 0, 0); // a cursor, no selection
+  } else {
+    const l = doc.lineAt(line);
+    editor.selection = new vscode.Selection(l.range.start, l.range.end);
+  }
   await new Promise((r) => setTimeout(r, 800)); // the bridge debounces editor context
 }
 
@@ -28,13 +32,20 @@ describe('e2e · context', function () {
     assert.match(reply, /BANANA-17/);
   });
 
-  it('/file attaches the open file', async () => {
+  it('the open file rides along by default, and /file takes it out', async () => {
     await freshChat();
-    await openAndSelect('src/app.txt', 0);
+    await openAndSelect('src/app.txt', null); // open, nothing selected
+    const reply = await ask('According to the attached file, what is the version? Do not use any tools.');
+    assert.match(reply, /v[12]/, 'the open file was attached by default');
     await h.setInput('/file');
     await h.keydown('Enter');
-    const reply = await ask('According to the attached file, what is the version? Do not use any tools.');
-    assert.match(reply, /v[12]/);
+    await until(async () => (await h.allText('.sys-chip')).some((t) => /excluded from context/.test(t)), 5000, 'the excluded chip');
+    await h.setInput('Reply with exactly: NO-FILE');
+    await h.keydown('Enter');
+    const sent = (await h.posted('send')).at(-1);
+    assert.strictEqual(sent?.includeActiveFile, false, 'the next message goes without the file');
+    await h.setInput('/file'); // restore the default for later tests
+    await h.keydown('Enter');
   });
 
   it('a pasted image reaches a vision model', async () => {

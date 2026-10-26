@@ -191,7 +191,9 @@ export class OpencodeV2Client {
     const rows: any[] = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
     const out: McpStatusResponse = {};
     for (const s of rows) {
-      out[String(s.name ?? s.id)] = { ...s, status: String(s.status?.type ?? s.status ?? 'pending'), error: s.status?.error ?? s.error };
+      // v2: { name, status: { status: 'connected' | 'pending' | 'disabled' | 'failed' | 'needs_auth', error? } }
+      const st = s.status && typeof s.status === 'object' ? s.status : { status: s.status };
+      out[String(s.name ?? s.id)] = { ...s, status: String(st.status ?? 'pending'), error: st.error ?? s.error };
     }
     return out;
   }
