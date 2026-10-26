@@ -185,7 +185,9 @@ export class ChatBridge {
       // the probe is also auth-aware (LM Studio's greeting answers 200 even to
       // a rejected key, which would otherwise spin doInit in a reconnect loop).
       probeUpstream: () => this.probeUpstream(),
-      serverHealthy: () => this.deps.server.isRunning && !!this.client,
+      // A restarted engine is running, but not the one this panel's client
+      // talks to: that counts as down, so the next tick reconnects.
+      serverHealthy: () => this.deps.server.isCurrent(this.client),
       isConnected: () => this.connected,
       goOffline: () => this.markOffline(),
       connect: () => this.init(),
@@ -418,7 +420,7 @@ export class ChatBridge {
    * on success. Returns whether we are live afterwards.
    */
   private async reconnect(): Promise<boolean> {
-    if (!this.deps.server.isRunning) {
+    if (!this.deps.server.isCurrent(this.client)) {
       this.teardownConnection(false);
     }
     return this.healer.reconnect();
@@ -570,7 +572,9 @@ export class ChatBridge {
       // (permission mode, MCP servers) or on "Restart OpenCode Server". The
       // health loop would notice within a tick, but the message in hand would
       // already have failed against the stopped engine — so heal first.
-      if (msg.type !== 'ready' && this.client && !this.deps.server.isRunning) {
+      // "Restart" starts the new engine at once, so whether one is running is
+      // not enough: this panel's client must be its client.
+      if (msg.type !== 'ready' && this.client && !this.deps.server.isCurrent(this.client)) {
         log('engine was restarted since this panel connected; reconnecting before handling the message');
         await this.reconnect();
       }
