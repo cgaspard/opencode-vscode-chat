@@ -16,8 +16,9 @@ async function openAndSelect(rel: string, line: number): Promise<void> {
 
 describe('e2e · context', function () {
   afterEach(async () => {
-    // Close the file editors but keep the panel (it lives in the first group).
-    await vscode.commands.executeCommand('workbench.action.closeEditorsInOtherGroups');
+    // Close the text editors this suite opened — never the panel's tab.
+    const textTabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter((t) => t.input instanceof vscode.TabInputText);
+    await vscode.window.tabGroups.close(textTabs);
   });
 
   it('highlighted code is attached to the next message', async () => {
