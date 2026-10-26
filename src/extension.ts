@@ -143,6 +143,9 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const added = await deps.registry.addLocal('E2E Fake', url, { flavor: 'lmstudio' });
         await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
+        // The engine's provider set is baked in at start; an open panel heals
+        // onto a fresh engine with the next message (as the UI's provider edits do).
+        server?.dispose();
         return { id: added.id, providerID: added.providerID };
       }),
       vscode.commands.registerCommand(
@@ -150,6 +153,7 @@ export function activate(context: vscode.ExtensionContext): void {
         async (state: { id: string }) => {
           await deps.registry.remove(state.id);
           await syncEndpointsFromRegistry(deps.registry, deps.endpoints);
+          server?.dispose();
         },
       ),
     );
