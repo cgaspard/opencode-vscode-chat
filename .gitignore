@@ -27,5 +27,5 @@ pat.txt
 /graphoxide-out/
 
 # Embedded OpenCode engine, built by scripts/build-opencode-sdk.js at package time.
-opencode-sdk/
+/opencode-sdk/
 out-live/
