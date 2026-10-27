@@ -49,13 +49,13 @@ for (const [key, label] of sections) {
 // attached — not in CHANGELOG.md, which renders the same notes as one history.
 if (!process.argv.includes('--no-footer')) {
   out.push('---');
-  out.push('Install the `.vsix` attached to this release via:');
+  out.push('Install the `.vsix` for your platform attached to this release (darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64 or win32-arm64) via:');
   out.push('');
   out.push('```bash');
   // The package name, not a literal — the .vsix filenames the release workflow
   // produces are derived from it, and a hardcoded copy went stale once already.
   const pkgName = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).name;
-  out.push(`code --install-extension ${pkgName}-${data.version}.vsix`);
+  out.push(`code --install-extension ${pkgName}-<platform>-${data.version}.vsix`);
   out.push('```');
 }
 
