@@ -3,6 +3,17 @@
 All notable changes to OpenCode Agent Panel. Generated from `releasenotes/*.yaml`
 by `scripts/render-changelog.js` — edit those, not this file.
 
+## v0.19.1
+
+_Released 2026-11-07_
+
+### Highlights
+- Fixes 0.19.0, which could not start. Its panel showed "Cannot find module '@silvia-odwyer/photon-node/photon_rs_bg.wasm'" and never answered. If you switched back to 0.18 because of it, this build is safe to try again.
+- This is a pre-release. If something that worked in 0.18 breaks, please open an issue, and switch back with "Switch to Release Version".
+
+### Fixed
+- The embedded OpenCode engine starts again. OpenCode 2.2.6 loads an image library as it starts, and 0.19.0 shipped without it. The library now ships with the extension, and every build checks that the packaged engine loads by itself before it can be released.
+
 ## v0.19.0
 
 _Released 2026-11-07_
