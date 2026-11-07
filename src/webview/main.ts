@@ -2330,7 +2330,7 @@ function renderServerMenu(): void {
       <span class="model-dot${p.enabled && p.status === 'ready' ? ' loaded' : p.status === 'offline' ? ' err' : ''}"></span>
       <span class="model-info">
         <span class="model-name">${escapeHtml(p.name)}</span>
-        <span class="model-meta">${detail} · ${STATUS_LABEL[p.status]}${models}</span>
+        <span class="model-meta">${detail} · ${STATUS_LABEL[p.status]}${p.schemeFix ? ` · answers over ${escapeHtml(p.schemeFix.slice(0, p.schemeFix.indexOf(':')))}` : ''}${models}</span>
       </span>
       <button class="model-action provider-toggle ${p.enabled ? 'on' : 'off'}${state.pendingProviders.has(p.id) ? ' pending' : ''}" role="switch" aria-checked="${p.enabled}" aria-busy="${state.pendingProviders.has(p.id)}" title="${state.pendingProviders.has(p.id) ? 'Applying — restarting the agent…' : p.enabled ? `Disable ${p.name} — its models leave the picker` : `Enable ${p.name}`}"><span class="toggle-track"><span class="toggle-knob"></span></span></button>
       ${
@@ -2644,20 +2644,30 @@ function renderConnection(): void {
     : state.providers.filter((p) => p.enabled && p.kind === 'local' && p.status === 'offline');
   // Three genuinely different problems, three different fixes: nothing
   // configured, a key that was refused, or a local server that isn't running.
+  // One offline local endpoint whose scheme is the whole problem (https://
+  // saved for a plain-http server): name it and offer the URL that answers.
+  const fixP = !auth && offline.length === 1 && offline[0].schemeFix && offline[0].url ? offline[0] : null;
+  const toScheme = fixP ? fixP.schemeFix!.slice(0, fixP.schemeFix!.indexOf(':')) : '';
+  const fromScheme = fixP ? fixP.url!.slice(0, fixP.url!.indexOf(':')) : '';
   const title = !state.hasProviders
     ? 'No provider configured'
     : auth
       ? 'A provider rejected your API key'
-      : selectedDown
-        ? `Can't reach ${selectedProvider!.name}`
-        : "Can't reach your provider";
+      : fixP
+        ? `${escapeHtml(fixP.name)} answers over ${toScheme}, not ${fromScheme}`
+        : selectedDown
+          ? `Can't reach ${selectedProvider!.name}`
+          : "Can't reach your provider";
   const sub = !state.hasProviders
     ? 'Add an API key for a cloud provider, point at a local server, or use the free <b>OpenCode Zen</b> models — all under <b>Providers</b>.'
     : auth
       ? 'The stored key was refused (401) — update it under <b>Providers</b>.'
-      : offline.length
-        ? `${offline.map((p) => `<code>${escapeHtml(p.url ?? p.name)}</code>`).join(', ')} isn't responding — start it${selectedDown ? ', or pick a model from another provider' : ', or add another provider'}.`
-        : 'Nothing is responding — check your providers.';
+      : fixP
+        ? `<code>${escapeHtml(fixP.url!)}</code> fails, but <code>${escapeHtml(fixP.schemeFix!)}</code> responds.` +
+          (toScheme === 'http' && fixP.hasApiKey ? ' Your API key would then cross the network unencrypted.' : '')
+        : offline.length
+          ? `${offline.map((p) => `<code>${escapeHtml(p.url ?? p.name)}</code>`).join(', ')} isn't responding — start it${selectedDown ? ', or pick a model from another provider' : ', or add another provider'}.`
+          : 'Nothing is responding — check your providers.';
   connBanner.innerHTML = `
     <span class="conn-ico"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1 5h2v7h-2V7zm0 9h2v2h-2v-2z"/></svg></span>
     <span class="conn-text">
@@ -2666,9 +2676,17 @@ function renderConnection(): void {
     </span>
     <span class="conn-actions">
       <button class="conn-btn" id="conn-retry">Retry</button>
-      <button class="conn-btn primary" id="conn-servers">Providers</button>
+      ${fixP ? `<button class="conn-btn primary" id="conn-fix-scheme">Use ${toScheme}</button>` : ''}
+      <button class="conn-btn${fixP ? '' : ' primary'}" id="conn-servers">Providers</button>
     </span>`;
   connBanner.querySelector('#conn-retry')!.addEventListener('click', () => post({ type: 'retryConnect' }));
+  if (fixP) {
+    // A URL-only edit: name and key are kept, and the host respawns the agent
+    // against the corrected endpoint.
+    connBanner.querySelector('#conn-fix-scheme')!.addEventListener('click', () =>
+      post({ type: 'updateProvider', id: fixP.id, url: fixP.schemeFix }),
+    );
+  }
   connBanner.querySelector('#conn-servers')!.addEventListener('click', (e) => {
     e.stopPropagation();
     // Providers live in the combined model menu now.

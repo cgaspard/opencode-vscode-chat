@@ -73,6 +73,12 @@ export interface UiProvider {
   status: 'ready' | 'needs-key' | 'offline' | 'disabled' | 'unknown';
   /** Short explanation for the badge, when there is one. */
   detail?: string;
+  /**
+   * An offline local endpoint whose URL failed only because of its scheme
+   * (https:// to a plain-http server, or the reverse): the same URL with the
+   * other scheme, confirmed to answer.
+   */
+  schemeFix?: string;
   /** How many models this provider is currently contributing to the picker. */
   modelCount: number;
 }

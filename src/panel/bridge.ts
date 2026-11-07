@@ -23,7 +23,7 @@ import {
   parseRevisionVerdict,
 } from '../core/goal';
 import { humanizeError, isConnectionError } from '../core/errors';
-import { aggregateUpstream, type ProbeStatus } from '../core/health';
+import { aggregateUpstream, effectiveEndpointProbe, type ProbeStatus } from '../core/health';
 import { type PermissionMode, normalizePermissionMode } from '../core/permission';
 import {
   LOCAL_FLAVOR_LABELS,
@@ -42,6 +42,7 @@ import {
 } from '../core/providers';
 import { ConnectResult, SelfHealer } from '../core/reconnect';
 import { isContextLive, selectionLabel } from '../core/selection';
+import { alternateSchemeUrl } from '../core/scheme';
 import { normalizeServerUrl } from '../core/url';
 import { emptySessionCandidates } from '../core/sessions';
 import { classifySkills } from '../core/skills';
@@ -172,6 +173,11 @@ export class ChatBridge {
   private lastPostedModelsJson = '';
   /** Last probe result per local connection id, for the provider list's badges. */
   private lastProbes = new Map<string, ProbeStatus>();
+  /** Per endpoint: consecutive timeouts, and the last probe that was not one. */
+  private endpointTimeouts = new Map<string, number>();
+  private settledProbes = new Map<string, ProbeStatus>();
+  /** Local endpoints that answer only on the other scheme, keyed by id (see diagnoseSchemes). */
+  private schemeFixes = new Map<string, { from: string; to: string }>();
   private titleSink: ((t: string) => void) | undefined;
   private lastModels: UiModel[] = [];
   private serverExitSub: Disposable | undefined;
@@ -267,6 +273,14 @@ export class ChatBridge {
       !this.connected,
     );
     this.lastProbes = probes;
+    for (const [id, status] of probes) {
+      if (status === 'timeout') {
+        this.endpointTimeouts.set(id, (this.endpointTimeouts.get(id) ?? 0) + 1);
+      } else {
+        this.endpointTimeouts.set(id, 0);
+        this.settledProbes.set(id, status);
+      }
+    }
     return aggregateUpstream({
       probes: [...probes.values()],
       keyedProviders: connections.filter((c) => c.kind === 'catalog' && c.hasApiKey).length,
@@ -375,7 +389,10 @@ export class ChatBridge {
     }
     const offline = usable
       .filter((c) => c.kind === 'local' && this.lastProbes.get(c.id) !== 'ok')
-      .map((c) => c.name);
+      .map((c) => {
+        const fix = this.schemeFixes.get(c.id);
+        return fix && fix.from === c.baseUrl ? `${c.name} (it answers at ${fix.to})` : c.name;
+      });
     return offline.length
       ? `Can't reach ${offline.join(', ')}`
       : 'No provider is responding — retrying…';
@@ -824,6 +841,7 @@ export class ChatBridge {
     this.post({ type: 'status', text: 'Connecting…' });
     const upstream = await this.probeUpstream();
     this.connected = upstream === 'ok';
+    await this.diagnoseSchemes();
     await this.postProviders(this.connected);
 
     // Nothing can serve a model: show the connection screen and wait for a
@@ -1519,11 +1537,23 @@ export class ChatBridge {
     return { providerID: parsed.providerID, modelID: parsed.modelID };
   }
 
-  /** Stable summary of the last probe results, to detect a change cheaply. */
+  /**
+   * Stable summary of the probe results as the badges read them, to detect a
+   * change cheaply. It uses the effective probe, so a short run of timeouts
+   * changes nothing, and the tick a streak crosses the threshold does.
+   */
   private probeFingerprint(): string {
-    return [...this.lastProbes.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([id, status]) => `${id}:${status}`)
+    return [...this.lastProbes.keys()]
+      .sort((a, b) => a.localeCompare(b))
+      .map(
+        (id) =>
+          `${id}:${effectiveEndpointProbe({
+            probe: this.lastProbes.get(id),
+            timeoutStreak: this.endpointTimeouts.get(id) ?? 0,
+            settled: this.settledProbes.get(id),
+            offlineAfterTimeouts: OFFLINE_AFTER_TIMEOUTS,
+          })}`,
+      )
       .join(',');
   }
 
@@ -1574,20 +1604,59 @@ export class ChatBridge {
       this.nextProbeDueAt = 0;
     }
     const connections = this.deps.registry.list();
-    const providers: UiProvider[] = connections.map((c) => ({
-      id: c.id,
-      kind: c.kind,
-      providerID: c.providerID,
-      name: c.name,
-      url: c.baseUrl,
-      flavor: c.flavor,
-      hasApiKey: !!c.hasApiKey,
-      enabled: !c.disabled,
-      status: this.providerStatus(c),
-      detail: unusableReason(c) ?? undefined,
-      modelCount: this.lastModels.filter((m) => m.providerID === c.providerID).length,
-    }));
+    const providers: UiProvider[] = connections.map((c) => {
+      const status = this.providerStatus(c);
+      const schemeFix = this.schemeFixFor(c, status);
+      return {
+        id: c.id,
+        kind: c.kind,
+        providerID: c.providerID,
+        name: c.name,
+        url: c.baseUrl,
+        flavor: c.flavor,
+        hasApiKey: !!c.hasApiKey,
+        enabled: !c.disabled,
+        status,
+        detail: unusableReason(c) ?? undefined,
+        ...(schemeFix ? { schemeFix } : {}),
+        modelCount: this.lastModels.filter((m) => m.providerID === c.providerID).length,
+      };
+    });
     this.post({ type: 'providers', providers, connected });
+  }
+
+  /**
+   * For each local endpoint that failed outright, check whether its scheme is
+   * the only problem (https:// saved for a plain-http server, or the reverse),
+   * so the banner can name it instead of "isn't responding". Runs on connects
+   * only, never from the health loop. Each diagnosis remembers the URL it was
+   * made for, so an edited provider never shows a stale fix.
+   */
+  private async diagnoseSchemes(): Promise<void> {
+    const next = new Map<string, { from: string; to: string }>();
+    const candidates = this.deps.registry
+      .enabled()
+      .filter((c) => c.kind === 'local' && c.baseUrl && this.lastProbes.get(c.id) === 'unreachable');
+    await Promise.all(
+      candidates.map(async (c) => {
+        const answers = await this.deps.endpoints
+          .get(c.id)
+          ?.diagnoseScheme()
+          .catch(() => undefined);
+        const to = answers ? alternateSchemeUrl(c.baseUrl!) : undefined;
+        if (to) {
+          next.set(c.id, { from: c.baseUrl!, to });
+          log(`local endpoint ${c.name}: ${c.baseUrl} fails, but ${to} answers`);
+        }
+      }),
+    );
+    this.schemeFixes = next;
+  }
+
+  /** The working URL for an offline endpoint whose scheme is wrong, if diagnosed. */
+  private schemeFixFor(conn: ProviderConnection, status: UiProvider['status']): string | undefined {
+    const fix = this.schemeFixes.get(conn.id);
+    return status === 'offline' && fix && fix.from === conn.baseUrl ? fix.to : undefined;
   }
 
   /**
@@ -1602,7 +1671,13 @@ export class ChatBridge {
     if (conn.kind !== 'local') {
       return isUsable(conn) ? 'ready' : 'needs-key';
     }
-    const probe = this.lastProbes.get(conn.id);
+    // A short run of slow probes keeps the last settled verdict (issue #7).
+    const probe = effectiveEndpointProbe({
+      probe: this.lastProbes.get(conn.id),
+      timeoutStreak: this.endpointTimeouts.get(conn.id) ?? 0,
+      settled: this.settledProbes.get(conn.id),
+      offlineAfterTimeouts: OFFLINE_AFTER_TIMEOUTS,
+    });
     if (probe === 'ok') {
       return 'ready';
     }

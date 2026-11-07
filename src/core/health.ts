@@ -116,3 +116,28 @@ export function decideHealthAction(i: HealthInputs): HealthAction {
   }
   return 'none';
 }
+
+/**
+ * One local endpoint's probe as its badge should read it. A timeout is not
+ * proof of death: a saturated server mid-generation answers slowly. Until
+ * `offlineAfterTimeouts` consecutive timeouts, keep the endpoint's last settled
+ * verdict, the same tolerance `decideHealthAction` gives the aggregate. Without
+ * this, one slow probe marked the selected model's provider offline and popped
+ * the "Can't reach" banner in the middle of a long reply (issue #7).
+ *
+ * Returns the probe to judge by, or undefined when there is nothing settled to
+ * fall back on (never probed, or only ever timed out).
+ */
+export function effectiveEndpointProbe(i: {
+  probe: ProbeStatus | undefined;
+  /** Consecutive 'timeout' probes for this endpoint, including the current one. */
+  timeoutStreak: number;
+  /** The endpoint's last probe that was not a timeout. */
+  settled: ProbeStatus | undefined;
+  offlineAfterTimeouts: number;
+}): ProbeStatus | undefined {
+  if (i.probe === 'timeout' && i.timeoutStreak < i.offlineAfterTimeouts) {
+    return i.settled ?? 'timeout';
+  }
+  return i.probe;
+}

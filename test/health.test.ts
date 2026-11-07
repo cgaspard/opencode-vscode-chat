@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { aggregateUpstream, decideHealthAction, HealthInputs, ProbeStatus } from '../src/core/health';
+import { aggregateUpstream, decideHealthAction, effectiveEndpointProbe, HealthInputs, ProbeStatus } from '../src/core/health';
 
 // A fully-healthy baseline; each test overrides just the fields it cares about.
 const base: HealthInputs = {
@@ -115,4 +115,25 @@ test('when nothing serves, the most actionable failure wins', () => {
   assert.equal(down(['unreachable', 'auth-required']), 'auth-required');
   // ...and a timeout (maybe just busy) outranks a flat refusal.
   assert.equal(down(['unreachable', 'timeout']), 'timeout');
+});
+
+test('effectiveEndpointProbe keeps the last settled verdict through a short timeout streak', () => {
+  const at = (timeoutStreak: number, settled?: ProbeStatus) =>
+    effectiveEndpointProbe({ probe: 'timeout', timeoutStreak, settled, offlineAfterTimeouts: 3 });
+  // A busy server that was fine a moment ago still reads as fine...
+  assert.equal(at(1, 'ok'), 'ok');
+  assert.equal(at(2, 'ok'), 'ok');
+  // ...until the streak reaches the same threshold the aggregate uses.
+  assert.equal(at(3, 'ok'), 'timeout');
+  // Nothing settled to fall back on: the timeout stands.
+  assert.equal(at(1), 'timeout');
+});
+
+test('effectiveEndpointProbe passes non-timeout probes straight through', () => {
+  for (const probe of ['ok', 'unreachable', 'auth-required', undefined] as const) {
+    assert.equal(
+      effectiveEndpointProbe({ probe, timeoutStreak: 0, settled: 'ok', offlineAfterTimeouts: 3 }),
+      probe,
+    );
+  }
 });

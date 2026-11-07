@@ -11,6 +11,7 @@ import {
 } from '../core/context';
 import type { ReasoningCapability } from '../core/effort';
 import { ProbeStatus } from '../core/health';
+import { diagnoseScheme } from '../core/scheme';
 import type { LocalFlavor } from '../core/providers';
 import { log, logError } from '../logger';
 
@@ -174,6 +175,16 @@ export class LocalClient {
     } catch (err) {
       return isTimeoutError(err) ? 'timeout' : 'unreachable';
     }
+  }
+
+  /**
+   * After a probe came back 'unreachable': is the URL's scheme the only
+   * problem? Returns the same URL with http/https swapped when that one answers
+   * (LM Studio, Ollama and llama.cpp serve no TLS, so `https://` never works
+   * against them). Called on connects only, never from the health loop.
+   */
+  async diagnoseScheme(): Promise<string | undefined> {
+    return diagnoseScheme(this.baseUrl, { probePath: '/models', headers: this.headers() });
   }
 
   /**
