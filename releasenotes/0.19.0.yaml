@@ -1,0 +1,13 @@
+version: 0.19.0
+date: 2026-11-07
+highlights:
+  - A local provider saved with the wrong scheme now says so. LM Studio, Ollama and llama.cpp serve plain http, so a provider saved as `https://` used to show only "isn't responding" while the server was running fine. The banner now names the problem, shows the address that answers, and fixes the provider in one click.
+  - The embedded engine moves to OpenCode 2.2.6.
+  - This is a pre-release. If something that worked in 0.18 breaks, please open an issue, and switch back with "Switch to Release Version".
+added:
+  - A "Use http" button on the connection banner when an offline local provider answers only over the other scheme. It keeps the provider's name and API key. When the provider has a key, the banner warns that the key would then cross your network unencrypted. The provider list marks such a provider "answers over http" even when the banner isn't showing.
+changed:
+  - The engine is OpenCode 2.2.6 (`@opencode/sdk`), up from 2.1.4. Reasoning is no longer turned into plain text when you switch models or resume an interrupted reply, MCP servers that are still connecting get a moment to finish before the first prompt, and requests to a server whose host is briefly unreachable are retried.
+fixed:
+  - A slow answer from a local server no longer shows "Can't reach" for the model you are using in the middle of a long reply. A provider now keeps its last status until three health checks in a row time out, the same tolerance the overall connection already had.
+removed: []
